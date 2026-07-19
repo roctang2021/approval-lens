@@ -53,12 +53,14 @@ Verified in this environment:
 
 - **Plugin validation passes** on the installed Claude Code **v2.1.119**
   (`claude plugin validate .` → `✔ Validation passed`).
-- **Installed-version discrepancy vs docs**: the docs describe a newer CLI. On
-  v2.1.119 the validator has **no `--strict` flag** (documented for a later
-  version) and it rejects `$schema` and `displayName` as *errors* rather than
-  ignoring them as warnings (the docs' "unrecognized fields are warnings"
-  behavior is newer). Both fields were removed from `plugin.json` for
-  compatibility. Re-add `displayName` once targeting v2.1.143+.
+- **Installed-version discrepancy vs docs** *(resolved 2026-07-19)*: on
+  v2.1.119 the validator had **no `--strict` flag** and rejected `$schema` and
+  `displayName` as *errors*, so both fields were removed from `plugin.json` for
+  compatibility. After upgrading the local CLI to **v2.1.214** (docs list
+  `displayName` as requiring v2.1.143+), both fields were re-added
+  (`$schema: https://json.schemastore.org/claude-code-plugin-manifest.json`,
+  `displayName: "Permission Lens"`) and `claude plugin validate .` passes,
+  with and without `--strict`.
 - **Exact `hooks.json` invocation works**: piping the full documented
   `PermissionRequest` payload (incl. `permission_suggestions`) through
   `uv run --quiet "${CLAUDE_PLUGIN_ROOT}"/hooks/permission_lens.py` returns
@@ -105,3 +107,4 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
 - **M4 extension point**: `notify(payload)` in `permission_lens.py` is a no-op stub;
   a future `notify_url` config key will POST pending requests to a localhost panel.
   The docs' `http` hook type may be an alternative implementation path.
+
