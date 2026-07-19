@@ -1,0 +1,351 @@
+# Permission Lens — Tier 1 rule data.
+#
+# Each rule:
+#   id            unique kebab-case identifier
+#   category      one of the brief's risk categories (grouping only)
+#   severity      low | medium | high
+#   regex         a Python regex matched against the command (see `scope`)
+#                 OR
+#   predicate     name of a predicate function in permission_lens.py PREDICATES
+#   scope         whole (default) = match full command string
+#                 segment         = match any single pipeline stage
+#                 (ignored for predicate rules)
+#   explanation_* short "what it does" headline (the dialog headline line)
+#   risk_*        short "why it's risky" line (the "Risk:" line)
+#
+# Rules are ordered by category for readability; the analyzer sorts matches by
+# severity at format time, so file order does not affect output.
+
+rules:
+  # ── destructive filesystem ────────────────────────────────────────────────
+  - id: rm-rf-risky-target
+    category: destructive-fs
+    severity: high
+    predicate: rm_recursive_risky_target
+    explanation_en: "Recursively deletes files at a variable, glob, or system path"
+    explanation_zh: "递归删除变量、通配符或系统路径下的文件"
+    risk_en: "If the target expands unexpectedly (empty variable, wide glob) this can wipe far more than intended, with no recycle bin."
+    risk_zh: "若目标意外展开（变量为空、通配符过宽），可能删除远超预期的文件，且不可恢复。"
+
+  - id: rm-rf-plain
+    category: destructive-fs
+    severity: medium
+    predicate: rm_recursive_plain
+    explanation_en: "Recursively force-deletes a directory"
+    explanation_zh: "递归强制删除目录"
+    risk_en: "Deletion is permanent — there is no undo and no trash."
+    risk_zh: "删除是永久性的 —— 无法撤销，也不进回收站。"
+
+  - id: dd-to-device
+    category: destructive-fs
+    severity: high
+    regex: '\bdd\b[^|;&]*\bof=/dev/'
+    explanation_en: "Writes raw bytes directly to a block device with dd"
+    explanation_zh: "用 dd 直接向块设备写入原始字节"
+    risk_en: "Writing to a device node can overwrite an entire disk or partition irrecoverably."
+    risk_zh: "写入设备节点可能不可逆地覆盖整块磁盘或分区。"
+
+  - id: mkfs
+    category: destructive-fs
+    severity: high
+    regex: '\bmkfs(\.\w+)?\b'
+    explanation_en: "Creates a new filesystem (formats a device)"
+    explanation_zh: "创建新文件系统（格式化设备）"
+    risk_en: "Formatting destroys all existing data on the target device."
+    risk_zh: "格式化会销毁目标设备上的所有现有数据。"
+
+  - id: shred
+    category: destructive-fs
+    severity: medium
+    regex: '\bshred\b'
+    explanation_en: "Overwrites files to make them unrecoverable"
+    explanation_zh: "覆写文件使其不可恢复"
+    risk_en: "shred is designed to defeat recovery — data is intentionally unrecoverable."
+    risk_zh: "shred 专为对抗恢复而设计 —— 数据将被故意抹除且无法找回。"
+
+  - id: chmod-chown-recursive
+    category: destructive-fs
+    severity: medium
+    regex: '\bch(mod|own)\b[^|;&]*(\s-[a-zA-Z]*R[a-zA-Z]*|\s--recursive)\b'
+    explanation_en: "Recursively changes permissions or ownership of a tree"
+    explanation_zh: "递归修改整个目录树的权限或属主"
+    risk_en: "A wrong path or wide tree can break access to many files at once."
+    risk_zh: "路径错误或范围过宽可能一次性破坏大量文件的访问权限。"
+
+  - id: chmod-world-writable
+    category: destructive-fs
+    severity: medium
+    regex: '\bchmod\b[^|;&]*\b(777|a\+w|o\+w)\b'
+    explanation_en: "Makes files world-writable"
+    explanation_zh: "将文件设为所有用户可写"
+    risk_en: "World-writable files let any local user modify them — a common privilege-escalation foothold."
+    risk_zh: "所有用户可写的文件可被任意本地用户修改 —— 常见的提权切入点。"
+
+  # ── remote code execution ─────────────────────────────────────────────────
+  - id: pipe-to-shell
+    category: remote-exec
+    severity: high
+    regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
+    explanation_en: "Pipes a downloaded script straight into a shell"
+    explanation_zh: "将下载的脚本直接管道给 shell 执行"
+    risk_en: "Unreviewed remote code runs with your privileges; the server can serve different content between review and execution."
+    risk_zh: "未经审查的远程代码以你的权限运行；服务器可能在你审查与执行之间替换内容。"
+
+  - id: shell-from-process-sub
+    category: remote-exec
+    severity: high
+    regex: '\b(bash|sh|zsh|dash|ksh)\b\s*<\(\s*(curl|wget|fetch)\b'
+    explanation_en: "Executes a downloaded script via process substitution"
+    explanation_zh: "通过进程替换执行下载的脚本"
+    risk_en: "Same as curl-pipe-to-shell: arbitrary remote code executes with no chance to inspect it first."
+    risk_zh: "与 curl 管道给 shell 相同：任意远程代码将在你无法预先检查的情况下执行。"
+
+  - id: curl-pipe-interpreter
+    category: remote-exec
+    severity: high
+    regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
+    explanation_en: "Pipes downloaded code into a language interpreter"
+    explanation_zh: "将下载的代码管道给语言解释器执行"
+    risk_en: "Arbitrary remote code executes immediately; content may change between fetch and run."
+    risk_zh: "任意远程代码立即执行；内容可能在抓取与运行之间改变。"
+
+  # ── data exfiltration ─────────────────────────────────────────────────────
+  - id: curl-upload-file
+    category: exfiltration
+    severity: high
+    regex: '\b(curl|wget)\b[^|;&]*(\s-d\s*@|--data(-binary|-raw|-urlencode)?\s*@|-F\s+\S*=@|\s-T\s+|--upload-file\b)'
+    explanation_en: "Uploads a local file to a remote server"
+    explanation_zh: "将本地文件上传到远程服务器"
+    risk_en: "A local file (possibly secrets) is sent off-machine to an external endpoint."
+    risk_zh: "本地文件（可能含机密）被发送到外部端点，离开本机。"
+
+  - id: file-piped-to-network
+    category: exfiltration
+    severity: high
+    regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|\s*(curl|wget|nc|ncat|netcat|socat)\b'
+    explanation_en: "Pipes file contents to a network tool"
+    explanation_zh: "将文件内容管道给网络工具"
+    risk_en: "Local data is streamed to a network destination — a classic exfiltration pattern."
+    risk_zh: "本地数据被传输到网络目的地 —— 典型的数据外泄模式。"
+
+  - id: netcat-outbound
+    category: exfiltration
+    severity: medium
+    regex: '\b(nc|ncat|netcat)\b[^|;&]*<\s*\S'
+    explanation_en: "Sends a local file over a raw network connection"
+    explanation_zh: "通过原始网络连接发送本地文件"
+    risk_en: "Data leaves the machine over an unencrypted, unlogged channel."
+    risk_zh: "数据经由未加密、无日志的通道离开本机。"
+
+  # ── credential access ─────────────────────────────────────────────────────
+  - id: ssh-key-access
+    category: credential-access
+    severity: medium
+    regex: '(/\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b)'
+    explanation_en: "Touches SSH private keys or the ~/.ssh directory"
+    explanation_zh: "访问 SSH 私钥或 ~/.ssh 目录"
+    risk_en: "SSH private keys grant access to other machines; reading them is a credential-theft signal."
+    risk_zh: "SSH 私钥可用于访问其他机器；读取它们是凭据窃取的信号。"
+
+  - id: aws-creds-access
+    category: credential-access
+    severity: medium
+    regex: '/\.aws/(credentials|config)\b|/\.aws\b'
+    explanation_en: "Reads AWS credentials"
+    explanation_zh: "读取 AWS 凭据"
+    risk_en: "AWS keys can control cloud infrastructure and billing; exposure is high-impact."
+    risk_zh: "AWS 密钥可控制云基础设施与账单；泄露影响重大。"
+
+  - id: dotenv-access
+    category: credential-access
+    severity: low
+    regex: '(^|[\s/=@''"])\.env(\.[\w.-]+)?(\s|$|[''"])'
+    explanation_en: "Reads a .env file"
+    explanation_zh: "读取 .env 文件"
+    risk_en: ".env files usually hold secrets (API keys, tokens); note where this command sends them."
+    risk_zh: ".env 文件通常保存机密（API 密钥、令牌）；留意该命令将其发往何处。"
+
+  - id: macos-keychain-dump
+    category: credential-access
+    severity: high
+    regex: '\bsecurity\s+(find|dump)-(generic|internet)-password\b|\bsecurity\s+dump-keychain\b'
+    explanation_en: "Extracts passwords from the macOS Keychain"
+    explanation_zh: "从 macOS 钥匙串中提取密码"
+    risk_en: "Reads stored credentials in cleartext straight out of the OS keychain."
+    risk_zh: "直接从操作系统钥匙串中以明文读取已保存的凭据。"
+
+  - id: linux-keyring-access
+    category: credential-access
+    severity: medium
+    regex: '\b(secret-tool|gnome-keyring-daemon|kwalletcli)\b'
+    explanation_en: "Reads secrets from the Linux keyring"
+    explanation_zh: "从 Linux keyring 读取机密"
+    risk_en: "Pulls stored credentials out of the desktop keyring."
+    risk_zh: "从桌面 keyring 中取出已保存的凭据。"
+
+  - id: shell-history-access
+    category: credential-access
+    severity: medium
+    regex: '(\.bash_history|\.zsh_history|\.python_history|\.mysql_history|\.psql_history)\b'
+    explanation_en: "Reads shell/tool command history"
+    explanation_zh: "读取 shell/工具命令历史"
+    risk_en: "History files often contain tokens, passwords, and hostnames typed on the command line."
+    risk_zh: "历史文件常含在命令行中输入的令牌、密码与主机名。"
+
+  # ── obfuscation ───────────────────────────────────────────────────────────
+  - id: base64-decode-exec
+    category: obfuscation
+    severity: high
+    regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
+    explanation_en: "Decodes base64 and pipes it into a shell/interpreter"
+    explanation_zh: "解码 base64 后管道给 shell/解释器执行"
+    risk_en: "Encoding hides what will actually run — a hallmark of malicious one-liners."
+    risk_zh: "编码隐藏了实际将运行的内容 —— 恶意单行命令的典型特征。"
+
+  - id: hex-decode-exec
+    category: obfuscation
+    severity: high
+    regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|\s*(bash|sh|zsh|python[0-9.]*)\b'
+    explanation_en: "Decodes hex and pipes it into a shell/interpreter"
+    explanation_zh: "解码十六进制后管道给 shell/解释器执行"
+    risk_en: "Hex encoding conceals the real command from review."
+    risk_zh: "十六进制编码使真实命令在审查时被隐藏。"
+
+  - id: eval-dynamic
+    category: obfuscation
+    severity: medium
+    regex: '(^|[\s;&|(`])eval\s+[''"$`]'
+    explanation_en: "Runs eval on a dynamically built string"
+    explanation_zh: "对动态拼接的字符串执行 eval"
+    risk_en: "eval executes constructed text as code, so the real effect is not visible in the command."
+    risk_zh: "eval 将拼接文本当作代码执行，命令中看不到其真实效果。"
+
+  # ── privilege escalation ──────────────────────────────────────────────────
+  - id: sudo
+    category: privilege
+    severity: medium
+    regex: '(^|[\s;&|(])sudo\b'
+    explanation_en: "Runs a command as root via sudo"
+    explanation_zh: "通过 sudo 以 root 身份运行命令"
+    risk_en: "Root privileges remove the usual guardrails; a mistake affects the whole system."
+    risk_zh: "root 权限移除了常规防护；一旦出错将影响整个系统。"
+
+  - id: su-switch-user
+    category: privilege
+    severity: medium
+    regex: '(^|[\s;&|(])su\s+[-\w]'
+    explanation_en: "Switches to another user (often root)"
+    explanation_zh: "切换到其他用户（通常是 root）"
+    risk_en: "Runs subsequent commands under a different, often more privileged, account."
+    risk_zh: "以另一个（通常权限更高的）账户运行后续命令。"
+
+  # ── dangerous git ─────────────────────────────────────────────────────────
+  - id: git-push-force
+    category: git-dangerous
+    severity: medium
+    regex: '\bgit\b[^;&|]*\bpush\b[^;&|]*(--force(?!-with-lease)\b|\s-f\b)'
+    explanation_en: "Force-pushes, overwriting remote history"
+    explanation_zh: "强制推送，覆盖远程历史"
+    risk_en: "Overwrites commits on the remote; teammates' work can be lost and history rewritten."
+    risk_zh: "覆盖远程上的提交；可能丢失同事的工作并改写历史。"
+
+  - id: git-reset-hard
+    category: git-dangerous
+    severity: medium
+    regex: '\bgit\b[^;&|]*\breset\b[^;&|]*--hard\b'
+    explanation_en: "Discards all uncommitted changes (reset --hard)"
+    explanation_zh: "丢弃所有未提交的更改（reset --hard）"
+    risk_en: "Uncommitted work in the working tree and index is permanently discarded."
+    risk_zh: "工作区与暂存区中未提交的工作将被永久丢弃。"
+
+  - id: git-clean-force
+    category: git-dangerous
+    severity: medium
+    regex: '\bgit\b[^;&|]*\bclean\b[^;&|]*-[a-zA-Z]*f'
+    explanation_en: "Deletes untracked files (git clean -f)"
+    explanation_zh: "删除未跟踪的文件（git clean -f）"
+    risk_en: "Untracked files, possibly including local-only config, are deleted with no recovery."
+    risk_zh: "未跟踪的文件（可能含仅本地的配置）被删除且无法恢复。"
+
+  - id: git-remote-change
+    category: git-dangerous
+    severity: low
+    regex: '\bgit\b[^;&|]*\bremote\b[^;&|]*\b(set-url|add)\b'
+    explanation_en: "Changes where the repo pushes/pulls"
+    explanation_zh: "更改仓库推送/拉取的目标地址"
+    risk_en: "Repointing a remote can redirect pushes to an attacker-controlled host."
+    risk_zh: "重定向 remote 可能把推送导向攻击者控制的主机。"
+
+  # ── publishing / irreversible ─────────────────────────────────────────────
+  - id: npm-publish
+    category: publish-irreversible
+    severity: medium
+    regex: '\bnpm\s+publish\b'
+    explanation_en: "Publishes a package to the npm registry"
+    explanation_zh: "将包发布到 npm 仓库"
+    risk_en: "A published version is public and effectively permanent; unpublish is heavily restricted."
+    risk_zh: "已发布的版本是公开的且实际上不可撤回；取消发布受严格限制。"
+
+  - id: pypi-upload
+    category: publish-irreversible
+    severity: medium
+    regex: '\btwine\s+upload\b|\bpython[0-9.]*\s+-m\s+twine\s+upload\b'
+    explanation_en: "Uploads a package to PyPI"
+    explanation_zh: "将包上传到 PyPI"
+    risk_en: "A released version cannot be re-uploaded under the same number; the release is permanent."
+    risk_zh: "同一版本号不能重新上传；发布是永久性的。"
+
+  - id: iac-destroy
+    category: publish-irreversible
+    severity: high
+    regex: '\b(terraform|terragrunt|pulumi|cdk)\s+destroy\b'
+    explanation_en: "Tears down infrastructure (terraform/pulumi destroy)"
+    explanation_zh: "销毁基础设施（terraform/pulumi destroy）"
+    risk_en: "Destroys managed cloud resources — data stores included — often irreversibly."
+    risk_zh: "销毁受管的云资源（含数据存储），通常不可逆。"
+
+  - id: cloud-cli-delete
+    category: publish-irreversible
+    severity: medium
+    regex: '\b(aws|gcloud|az)\b[^;&|]*\b(delete|rm|destroy|terminate|remove)\b'
+    explanation_en: "Deletes a cloud resource via a cloud CLI"
+    explanation_zh: "通过云 CLI 删除云资源"
+    risk_en: "Cloud deletes can remove data or infrastructure that is expensive or impossible to restore."
+    risk_zh: "云端删除可能移除难以或无法恢复的数据或基础设施。"
+
+  # ── persistence / system modification ─────────────────────────────────────
+  - id: crontab-modify
+    category: persistence
+    severity: medium
+    regex: '\bcrontab\b(?!\s+-l)'
+    explanation_en: "Installs or edits a cron job"
+    explanation_zh: "安装或编辑 cron 定时任务"
+    risk_en: "A cron entry runs code on a schedule — a common way to establish persistence."
+    risk_zh: "cron 条目会按计划运行代码 —— 建立持久化的常见方式。"
+
+  - id: systemd-service
+    category: persistence
+    severity: medium
+    regex: '\bsystemctl\s+(enable|disable|start|stop|mask|unmask)\b'
+    explanation_en: "Changes a systemd service"
+    explanation_zh: "更改 systemd 服务"
+    risk_en: "Enabling a service makes it run automatically at boot; a foothold for persistence."
+    risk_zh: "启用服务会使其开机自动运行；持久化的立足点。"
+
+  - id: launchd-modify
+    category: persistence
+    severity: medium
+    regex: '\blaunchctl\s+(load|bootstrap|enable|submit)\b'
+    explanation_en: "Registers a macOS launchd agent/daemon"
+    explanation_zh: "注册 macOS launchd 代理/守护进程"
+    risk_en: "launchd items run automatically at login or boot — a persistence mechanism."
+    risk_zh: "launchd 项会在登录或开机时自动运行 —— 一种持久化机制。"
+
+  - id: shell-rc-append
+    category: persistence
+    severity: high
+    regex: '>>?\s*(~|\$HOME)?/?\.(bashrc|bash_profile|zshrc|zprofile|zshenv|profile)\b'
+    explanation_en: "Writes to a shell startup file"
+    explanation_zh: "写入 shell 启动文件"
+    risk_en: "Code added to an rc file runs on every new shell — silent, durable persistence."
+    risk_zh: "写入 rc 文件的代码会在每个新 shell 中运行 —— 隐蔽且持久。"

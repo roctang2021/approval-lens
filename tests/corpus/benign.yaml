@@ -1,0 +1,60 @@
+# Benign command corpus. None of these may produce a HIGH-severity match.
+# The subset marked `clean: true` must produce NO match at all (info line only) —
+# these guard against false positives on everyday commands.
+commands:
+  - command: "ls -la"
+    clean: true
+  - command: "git status"
+    clean: true
+  - command: "npm test"
+    clean: true
+  - command: "npm install"
+    clean: true
+  - command: "npm run build"
+    clean: true
+  - command: "cat README.md"
+    clean: true
+  - command: "grep -rn TODO src/"
+    clean: true
+  - command: "find . -name '*.py' -type f"
+    clean: true
+  - command: "docker ps -a"
+    clean: true
+  - command: "kubectl get pods -n default"
+    clean: true
+  - command: "echo 'hello world'"
+    clean: true
+  - command: "mkdir -p build/output"
+    clean: true
+  - command: "cp src/config.example config.local"
+    clean: true
+  - command: "python3 manage.py migrate"
+    clean: true
+  - command: "node index.js --port 3000"
+    clean: true
+  - command: "tar -czf backup.tar.gz ./data"
+    clean: true
+  - command: "git log --oneline -10"
+    clean: true
+  - command: "git commit -m 'fix: handle empty input'"
+    clean: true
+  - command: "git diff HEAD~1"
+    clean: true
+  - command: "git push origin feature-branch"
+    clean: true
+  - command: "ps aux | grep node"
+    clean: true
+  - command: "cat access.log | grep 404 | awk '{print $1}' | sort | uniq -c | sort -rn"
+    clean: true
+  - command: "brew list --versions"
+    clean: true
+  - command: "sed -i.bak 's/foo/bar/g' file.txt"
+    clean: true
+  - command: "chmod +x scripts/deploy.sh"
+    clean: true
+  - command: "curl -s https://api.example.com/health"
+    clean: true
+  - command: "crontab -l"
+    clean: true
+  - command: "python3 tools/eval.py --dataset test"
+    clean: true

@@ -1,0 +1,8 @@
+{
+  "name": "permission-lens",
+  "version": "0.1.0",
+  "description": "Explains pending permission prompts in plain language — annotates the dialog, never decides for you.",
+  "author": { "name": "roctang2021" },
+  "license": "MIT",
+  "keywords": ["hooks", "permissions", "security", "explainer", "bash"]
+}
