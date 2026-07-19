@@ -1,9 +1,9 @@
 {
-  "description": "Permission Lens — annotates Bash permission dialogs with a plain-language risk explanation. Never returns a decision; the native dialog always shows.",
+  "description": "Permission Lens — annotates Bash/WebFetch/Write/Edit permission dialogs with a plain-language risk explanation. Never returns a decision; the native dialog always shows.",
   "hooks": {
     "PermissionRequest": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|WebFetch|Write|Edit",
         "hooks": [
           {
             "type": "command",

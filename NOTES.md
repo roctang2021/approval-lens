@@ -16,6 +16,16 @@ Sources (authoritative, re-check before schema changes):
    `permission_suggestions` array (the dialog's "always allow" options).
    There is **no `tool_use_id`** on this event (PreToolUse has it; PermissionRequest
    explicitly does not — matches the project brief).
+   - **Per-tool `tool_input` fields** *(needed for M5; the hooks reference page
+     documents only the Bash shape, so these were verified empirically from real
+     session transcripts under `~/.claude/projects/*/*.jsonl` on 2026-07-19 —
+     a tool_use block's `input` is exactly what arrives as the hook's
+     `tool_input`)*:
+     - **WebFetch**: `{url, prompt}`
+     - **Write**: `{file_path, content}`
+     - **Edit**: `{file_path, old_string, new_string, replace_all}`
+     - **MultiEdit**: not present in any local transcript → unverified → NOT
+       covered by M5 (would need `{file_path, edits:[...]}` confirmed first).
 2. **Passthrough**: a decision requires
    `hookSpecificOutput: {hookEventName: "PermissionRequest", decision: {behavior: …}}`.
    Omitting `hookSpecificOutput` and returning only common fields (`systemMessage`)
@@ -197,3 +207,39 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   absent, so CI without `claude` still passes the rest). `set -euo pipefail`;
   the smoke test captures via `if ! out=$(...)` so a non-zero hook exit is
   reported rather than silently aborting under `set -e`.
+
+## M5 (2026-07-19): multi-tool coverage (WebFetch / Write / Edit)
+
+- **Motivation**: a real Desktop test hit a `WebFetch` permission dialog with no
+  annotation — correct then (matcher was Bash-only) but a genuine gap.
+- **Matcher**: `hooks.json` → `"Bash|WebFetch|Write|Edit"` (explicit list, not
+  `"*"` — only spawn uv for tools we can explain).
+- **Field verification**: per-tool `tool_input` fields were verified empirically
+  from real session transcripts (see "Confirmed facts" item 1), since the hooks
+  reference documents only the Bash shape. WebFetch=`{url,prompt}`,
+  Write=`{file_path,content}`, Edit=`{file_path,old_string,new_string,replace_all}`.
+  MultiEdit unverified → deliberately not covered.
+- **Design — tool dispatch, shared rendering**: `TOOL_ANALYZERS` maps tool name
+  → analyzer; each returns `(matches, neutral_summary, tier2_subject, kind,
+  notify_subject)` or None. Unknown tool → None (native dialog, no annotation).
+  The rule-result shape, severity sort, threshold filter, and renderer are
+  unchanged and shared across tools; only matching + neutral summary differ.
+  `format_message(parsed, …)` kept as a Bash wrapper over the new generic
+  `render_message(matches, neutral, …)` so the M1–M2 Bash tests are untouched.
+- **Rules are still data**: new `hooks/rules_web.yaml` (5 URL rules) and
+  `hooks/rules_path.yaml` (11 path/content rules) reuse the same rule schema.
+  A generic `match_string_rules(rules, {field: subject})` matches each rule's
+  regex against the subject named by its `field` (`url` / `path` / `content`);
+  the loader assigns a per-file default field (`url` for web, `path` for path
+  rules). *Bug caught in smoke test*: web rules initially defaulted to field
+  `path` and matched nothing — fixed via `default_field`. Path regexes use
+  `(^|/)` anchors so `~/.ssh/x` and `/Users/x/.ssh/x` both match; the analyzer
+  `expanduser`s the path first.
+- **Tier 2 privacy extended**: per-tool system prompts (`bash`/`url`/`path`);
+  the subject sent is the command / URL / path only. WebFetch never sends the
+  `prompt`; Write/Edit never send file **content** unless the new
+  `llm.send_file_content` (default false, literal-true to enable) is set. Cache
+  key now includes `kind` so a URL and an equal-string command can't collide.
+  Tests assert the secret/prompt never appears in the request body by default.
+- Suite: 204 tests (was 160); +`tests/test_multitool.py`, fully offline, with
+  per-rule coverage assertions (every web/path rule needs a positive case).

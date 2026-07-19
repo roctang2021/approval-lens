@@ -55,7 +55,9 @@ except Exception:  # pragma: no cover - exercised only when pyyaml is missing
 MAX_MESSAGE_CHARS = 500  # default; overridable via config "max_message_chars"
 LANG = "en"              # default; overridable via config "lang"
 
-RULES_PATH = Path(__file__).with_name("rules.yaml")
+RULES_PATH = Path(__file__).with_name("rules.yaml")           # Bash
+WEB_RULES_PATH = Path(__file__).with_name("rules_web.yaml")   # WebFetch (URL)
+PATH_RULES_PATH = Path(__file__).with_name("rules_path.yaml") # Write / Edit
 
 # ── configuration ─────────────────────────────────────────────────────────────
 
@@ -77,6 +79,10 @@ DEFAULT_CONFIG = {
         "api_key_env": "ANTHROPIC_API_KEY",
         "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
         "cache_ttl_days": 7,             # 0 disables the response cache
+        # Whether to send Write/Edit file CONTENT to the model. Off by default:
+        # a command string / URL / path is a far smaller data surface than a
+        # file body. Must be literal true to enable.
+        "send_file_content": False,
     },
 }
 
@@ -129,6 +135,7 @@ def _validate_config(raw):
             llm["auth_token_env"] = llm_raw["auth_token_env"].strip()
         llm["cache_ttl_days"] = _clamped_number(
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
+        llm["send_file_content"] = llm_raw.get("send_file_content") is True
     return cfg
 
 
@@ -351,46 +358,57 @@ PREDICATES = {
 
 # ── rule engine ───────────────────────────────────────────────────────────────
 
-_RULES_CACHE = None
+_RULES_CACHE = {}  # keyed by yaml path -> compiled rule list
 
 
-def load_rules():
-    global _RULES_CACHE
-    if _RULES_CACHE is not None:
-        return _RULES_CACHE
+def _load_rules_from(path, default_field="path"):
+    if path in _RULES_CACHE:
+        return _RULES_CACHE[path]
     if yaml is None:
-        _RULES_CACHE = []
-        return _RULES_CACHE
-    with open(RULES_PATH, "r", encoding="utf-8") as fh:
+        _RULES_CACHE[path] = []
+        return []
+    with open(path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     rules = []
     for raw in data.get("rules", []):
-        compiled = None
-        if raw.get("regex"):
-            compiled = re.compile(raw["regex"])
         rules.append({
             "id": raw["id"],
             "category": raw.get("category", ""),
             "severity": raw.get("severity", "low"),
-            "regex": compiled,
+            "regex": re.compile(raw["regex"]) if raw.get("regex") else None,
             "predicate": raw.get("predicate"),
             "scope": raw.get("scope", "whole"),
+            # which subject string a string-rule matches against (see match_string_rules)
+            "field": raw.get("field", default_field),
             "explanation": {"en": raw.get("explanation_en", ""), "zh": raw.get("explanation_zh", "")},
             "risk": {"en": raw.get("risk_en", ""), "zh": raw.get("risk_zh", "")},
         })
-    _RULES_CACHE = rules
+    _RULES_CACHE[path] = rules
     return rules
 
 
-def analyze(parsed, rules=None):
-    """Return matched rules, highest severity first, deduped by rule id."""
-    rules = rules if rules is not None else load_rules()
-    matches = []
-    for rule in rules:
-        if _rule_matches(rule, parsed):
-            matches.append(rule)
+def load_rules():
+    return _load_rules_from(RULES_PATH)  # Bash rules (name kept for existing tests)
+
+
+def load_web_rules():
+    return _load_rules_from(WEB_RULES_PATH, default_field="url")
+
+
+def load_path_rules():
+    return _load_rules_from(PATH_RULES_PATH)  # default field "path"
+
+
+def _sort_by_severity(matches):
     matches.sort(key=lambda r: SEVERITY_ORDER.get(r["severity"], 0), reverse=True)
     return matches
+
+
+def analyze(parsed, rules=None):
+    """Bash analyzer: matched rules, highest severity first (dedup by rule id)."""
+    rules = rules if rules is not None else load_rules()
+    matches = [rule for rule in rules if _rule_matches(rule, parsed)]
+    return _sort_by_severity(matches)
 
 
 def _rule_matches(rule, parsed):
@@ -403,6 +421,22 @@ def _rule_matches(rule, parsed):
     if rule["scope"] == "segment":
         return any(regex.search(stage) for stage in parsed.stages)
     return bool(regex.search(parsed.command))
+
+
+def match_string_rules(rules, subjects):
+    """Match regex rules against a {field: string} map (WebFetch / Write / Edit).
+
+    `subjects` maps a rule's `field` (e.g. "url", "path", "content") to the
+    string that field's rules run against. A rule whose field is absent from
+    the map is skipped.
+    """
+    matches = []
+    for rule in rules:
+        regex = rule["regex"]
+        subject = subjects.get(rule["field"])
+        if regex and subject and regex.search(subject):
+            matches.append(rule)
+    return _sort_by_severity(matches)
 
 
 # ── neutral "what it does" summary ────────────────────────────────────────────
@@ -473,14 +507,44 @@ def neutral_summary(parsed, lang=LANG):
     return f"{_RUNS_LABEL[lang]} `{name}`"
 
 
+_FETCHES_LABEL = {"en": "Fetches", "zh": "访问"}
+_WRITES_LABEL = {"en": "Writes", "zh": "写入"}
+_EDITS_LABEL = {"en": "Edits", "zh": "编辑"}
+# Grab the host from a URL without importing urllib (kept lazy for Tier 2);
+# strip any userinfo so credentials are never echoed into the summary.
+_URL_HOST_RE = re.compile(r"^[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
+
+
+def neutral_summary_web(url, lang=LANG):
+    lang = lang if lang in _LANGS else "en"
+    m = _URL_HOST_RE.search(url or "")
+    host = m.group(1) if m else (url or "").strip()[:60]
+    return f"{_FETCHES_LABEL[lang]} {host}" if host else _FETCHES_LABEL[lang]
+
+
+def neutral_summary_path(file_path, label_map, lang=LANG):
+    lang = lang if lang in _LANGS else "en"
+    base = os.path.basename((file_path or "").rstrip("/")) or (file_path or "")
+    return f"{label_map[lang]} {base}"
+
+
 # ── message formatting ────────────────────────────────────────────────────────
 
 LLM_EMOJI = "🤖"
 
 
 def format_message(parsed, matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
+    """Bash-facing formatter (kept for existing callers/tests): derives the
+    neutral summary from the parsed command, then renders."""
+    return render_message(matches, neutral_summary(parsed, lang),
+                          lang=lang, max_chars=max_chars, llm_text=llm_text)
+
+
+def render_message(matches, neutral, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
+    """Generic renderer: matched rules + a precomputed neutral summary string ->
+    the systemMessage text. Tool-agnostic (Bash/WebFetch/Write/Edit)."""
     if not matches:
-        lines = [f"{INFO_EMOJI} {neutral_summary(parsed, lang)}"]
+        lines = [f"{INFO_EMOJI} {neutral}"]
     else:
         top = matches[0]
         sev = top["severity"]
@@ -539,35 +603,76 @@ LLM_API_VERSION = "2023-06-01"
 # and require this beta header on /v1/messages — an API key uses x-api-key.
 LLM_OAUTH_BETA = "oauth-2025-04-20"
 LLM_MAX_TOKENS = 300
-# Dialogs show short commands; skip Tier 2 for pathological inputs.
+# Dialogs show short subjects; skip Tier 2 for pathological inputs.
 LLM_MAX_COMMAND_CHARS = 4000
 
-LLM_SYSTEM_PROMPT = {
-    "en": (
-        "You explain shell commands shown in a permission dialog. The user "
-        "message is exactly one shell command. Reply with 1-2 short plain-text "
-        "sentences in English: what the command does and any notable risk. "
-        "No markdown, no preamble, no code blocks."
-    ),
-    "zh": (
-        "你负责解释权限弹框里出现的 shell 命令。用户消息就是一条 shell 命令本身。"
-        "用 1-2 句简短的中文纯文本回答:这条命令做什么、有什么值得注意的风险。"
-        "不要用 Markdown,不要客套开场白,不要代码块。"
-    ),
+# One system prompt per tool "kind"; the user message is the subject string
+# (command / URL / file path [+ optional contents]) and nothing else.
+LLM_SYSTEM_PROMPTS = {
+    "bash": {
+        "en": (
+            "You explain shell commands shown in a permission dialog. The user "
+            "message is exactly one shell command. Reply with 1-2 short plain-text "
+            "sentences in English: what the command does and any notable risk. "
+            "No markdown, no preamble, no code blocks."
+        ),
+        "zh": (
+            "你负责解释权限弹框里出现的 shell 命令。用户消息就是一条 shell 命令本身。"
+            "用 1-2 句简短的中文纯文本回答:这条命令做什么、有什么值得注意的风险。"
+            "不要用 Markdown,不要客套开场白,不要代码块。"
+        ),
+    },
+    "url": {
+        "en": (
+            "You explain a web fetch shown in a permission dialog. The user "
+            "message is exactly one URL a coding agent is about to fetch. Reply "
+            "with 1-2 short plain-text sentences in English: what fetching it "
+            "does and any notable risk (untrusted host, credentials or secrets "
+            "in the URL, an internal/loopback target). No markdown, no preamble."
+        ),
+        "zh": (
+            "你负责解释权限弹框里的一次网络抓取。用户消息就是一个即将被抓取的 URL。"
+            "用 1-2 句简短的中文纯文本回答:抓取它会做什么、有什么值得注意的风险"
+            "(不可信主机、URL 里带凭据或密钥、指向内网/回环)。不要用 Markdown,不要客套。"
+        ),
+    },
+    "path": {
+        "en": (
+            "You explain a file write/edit shown in a permission dialog. The "
+            "user message is the target file PATH a coding agent is about to "
+            "write or edit, optionally followed after a blank line by the new "
+            "contents. Reply with 1-2 short plain-text sentences in English: "
+            "what that file/location is and any notable risk of changing it. "
+            "No markdown, no preamble."
+        ),
+        "zh": (
+            "你负责解释权限弹框里的一次文件写入/编辑。用户消息是即将被写入或编辑的"
+            "目标文件路径,后面可能空一行再附上新内容。用 1-2 句简短的中文纯文本回答:"
+            "这个文件/位置是什么、改动它有什么值得注意的风险。不要用 Markdown,不要客套。"
+        ),
+    },
 }
+# Back-compat alias (the Bash prompts) for existing references.
+LLM_SYSTEM_PROMPT = LLM_SYSTEM_PROMPTS["bash"]
 
 
-def tier2_explanation(command, config):
-    """Return a one-line model-written explanation, or None (silent fallback)."""
+def tier2_explanation(subject, config, kind="bash"):
+    """Return a one-line model-written explanation, or None (silent fallback).
+
+    `subject` is the exact string sent to the model (command / URL / path[+content]);
+    `kind` selects the system prompt. Never includes cwd/session/transcript.
+    """
     llm = config.get("llm")
     if not isinstance(llm, dict) or not llm.get("enabled"):
         return None  # gate is pre-try, so it must tolerate unvalidated configs
     try:
-        if len(command) > LLM_MAX_COMMAND_CHARS:
+        if not subject or len(subject) > LLM_MAX_COMMAND_CHARS:
             return None
+        if kind not in LLM_SYSTEM_PROMPTS:
+            kind = "bash"
         model, lang = llm["model"], config.get("lang", "en")
         ttl_days = llm["cache_ttl_days"]
-        cache_path = _llm_cache_path(command, model, lang)
+        cache_path = _llm_cache_path(subject, model, lang, kind)
         cached = _cache_lookup(cache_path, ttl_days)
         if cached is not None:
             return _one_line(cached) or None
@@ -576,7 +681,7 @@ def tier2_explanation(command, config):
             return None
         timeout = llm["timeout_seconds"]
         text = _run_with_deadline(
-            lambda: _post_messages_api(command, model, lang, credential, timeout),
+            lambda: _post_messages_api(subject, model, lang, kind, credential, timeout),
             timeout,
         )
         text = _one_line(text or "")
@@ -611,24 +716,25 @@ def _resolve_credential(llm):
     return None
 
 
-def _post_messages_api(command, model, lang, credential, timeout):
+def _post_messages_api(subject, model, lang, kind, credential, timeout):
     # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
     import urllib.request
 
+    prompts = LLM_SYSTEM_PROMPTS.get(kind, LLM_SYSTEM_PROMPTS["bash"])
     # PRIVACY INVARIANT: the request body is a static system prompt plus the
-    # command string, nothing else. No cwd, session_id, or transcript content.
+    # subject string, nothing else. No cwd, session_id, or transcript content.
     body = json.dumps({
         "model": model,
         "max_tokens": LLM_MAX_TOKENS,
-        "system": LLM_SYSTEM_PROMPT.get(lang, LLM_SYSTEM_PROMPT["en"]),
-        "messages": [{"role": "user", "content": command}],
+        "system": prompts.get(lang, prompts["en"]),
+        "messages": [{"role": "user", "content": subject}],
     }).encode("utf-8")
     headers = {
         "content-type": "application/json",
         "anthropic-version": LLM_API_VERSION,
     }
-    kind, value = credential
-    if kind == "api_key":
+    cred_kind, value = credential
+    if cred_kind == "api_key":
         headers["x-api-key"] = value
     else:  # OAuth bearer token — different header AND a required beta flag
         headers["authorization"] = f"Bearer {value}"
@@ -669,8 +775,8 @@ def _cache_dir():
     return Path(os.path.expanduser(os.environ.get(CACHE_DIR_ENV) or DEFAULT_CACHE_DIR))
 
 
-def _llm_cache_path(command, model, lang):
-    digest = hashlib.sha256(f"{model}\n{lang}\n{command}".encode("utf-8")).hexdigest()
+def _llm_cache_path(subject, model, lang, kind="bash"):
+    digest = hashlib.sha256(f"{model}\n{lang}\n{kind}\n{subject}".encode("utf-8")).hexdigest()
     return _cache_dir() / "llm" / f"{digest}.json"
 
 
@@ -717,27 +823,90 @@ def notify(payload):
     return None
 
 
+# ── per-tool analyzers ────────────────────────────────────────────────────────
+#
+# Each analyzer maps one tool's tool_input to a common Analysis:
+#   (matches, neutral_summary, tier2_subject, tier2_kind, notify_subject)
+# or None to stay silent (unknown/empty input → native dialog, no annotation).
+# tool_input field names verified from real transcripts (NOTES.md, item 1).
+
+
+def _analyze_bash(tool_input, config, lang):
+    command = tool_input.get("command")
+    if not command or not command.strip():
+        return None
+    parsed = Parsed(command)
+    matches = analyze(parsed)
+    return matches, neutral_summary(parsed, lang), command, "bash", command
+
+
+def _analyze_webfetch(tool_input, config, lang):
+    url = tool_input.get("url")  # WebFetch: {url, prompt}
+    if not url or not str(url).strip():
+        return None
+    url = str(url).strip()
+    matches = match_string_rules(load_web_rules(), {"url": url})
+    # Send only the URL to Tier 2 — never the prompt (it may carry user data).
+    return matches, neutral_summary_web(url, lang), url, "url", url
+
+
+def _analyze_write(tool_input, config, lang):
+    return _analyze_file(tool_input, config, lang,
+                         content_key="content", label=_WRITES_LABEL)
+
+
+def _analyze_edit(tool_input, config, lang):
+    return _analyze_file(tool_input, config, lang,
+                         content_key="new_string", label=_EDITS_LABEL)
+
+
+def _analyze_file(tool_input, config, lang, content_key, label):
+    # Write: {file_path, content}; Edit: {file_path, old_string, new_string}.
+    path = tool_input.get("file_path")
+    if not path or not str(path).strip():
+        return None
+    path = str(path)
+    content = tool_input.get(content_key)
+    content = str(content) if isinstance(content, str) else ""
+    subjects = {"path": os.path.expanduser(path)}
+    if content:
+        subjects["content"] = content
+    matches = match_string_rules(load_path_rules(), subjects)
+    # Tier 2 subject is the PATH only by default. File content is a much larger
+    # data surface, so it is sent only when llm.send_file_content is on.
+    subject = path
+    if (config.get("llm") or {}).get("send_file_content") and content:
+        subject = f"{path}\n\n{content}"
+    return matches, neutral_summary_path(path, label, lang), subject, "path", path
+
+
+TOOL_ANALYZERS = {
+    "Bash": _analyze_bash,
+    "WebFetch": _analyze_webfetch,
+    "Write": _analyze_write,
+    "Edit": _analyze_edit,
+}
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def build_message(event, config=None):
     """Pure core: event dict -> systemMessage string (or None to stay silent)."""
     config = config if config is not None else load_config()
-    # PermissionRequest input schema — see NOTES.md ("Confirmed facts", item 1):
-    # tool_name + tool_input{command,...}. Matcher is Bash, but guard anyway.
-    if event.get("tool_name") != "Bash":
+    analyzer = TOOL_ANALYZERS.get(event.get("tool_name"))
+    if analyzer is None:  # unannotated tool -> native dialog shows unchanged
         return None
-    command = (event.get("tool_input") or {}).get("command")
-    if not command or not command.strip():
+    result = analyzer(event.get("tool_input") or {}, config, config["lang"])
+    if result is None:
         return None
-    parsed = Parsed(command)
-    matches = analyze(parsed)
-    notify({"command": command, "matches": [m["id"] for m in matches]})
+    matches, neutral, subject, kind, notify_subject = result
+    notify({"subject": notify_subject, "matches": [m["id"] for m in matches]})
     if not passes_threshold(matches, config["min_severity_to_annotate"]):
         return None
-    # Tier 2 runs only for commands we're actually going to annotate.
-    llm_text = tier2_explanation(command, config)
-    return format_message(
-        parsed, matches,
+    # Tier 2 runs only for prompts we're actually going to annotate.
+    llm_text = tier2_explanation(subject, config, kind)
+    return render_message(
+        matches, neutral,
         lang=config["lang"],
         max_chars=config["max_message_chars"],
         llm_text=llm_text,

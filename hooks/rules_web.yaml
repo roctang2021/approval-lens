@@ -1,0 +1,51 @@
+# Permission Lens — Tier 1 rule data for the WebFetch tool.
+#
+# Same rule shape as rules.yaml, but each `regex` is matched against the URL
+# string (tool_input.url), not a shell command. WebFetch is read-only, so most
+# signals are low/medium — informational, not destructive.
+
+rules:
+  - id: web-userinfo
+    category: credential-access
+    severity: high
+    regex: "^[a-zA-Z][\\w+.-]*://[^/@?#\\s]*:[^/@?#\\s]*@"
+    explanation_en: "Fetches a URL with credentials embedded in it (user:pass@host)"
+    explanation_zh: "请求的 URL 里内嵌了凭据(user:pass@host)"
+    risk_en: "Credentials in a URL get logged in history, proxies, and server logs, and can leak to third parties."
+    risk_zh: "URL 里的凭据会被历史记录、代理和服务器日志留存,并可能泄露给第三方。"
+
+  - id: web-secret-in-query
+    category: exfiltration
+    severity: medium
+    regex: "[?&](access[_-]?token|api[_-]?key|apikey|auth|token|secret|password|passwd|pwd|session)="
+    explanation_en: "Sends a token/key/password in the URL query string"
+    explanation_zh: "在 URL 查询串里发送 token/key/密码"
+    risk_en: "Query parameters are stored in browser history, proxy and server logs — a poor place for a secret."
+    risk_zh: "查询参数会被浏览器历史、代理和服务器日志记录 —— 放密钥很不安全。"
+
+  - id: web-ip-or-localhost
+    category: internal-target
+    severity: medium
+    regex: "://(\\[[0-9a-fA-F:]+\\]|(\\d{1,3}\\.){3}\\d{1,3}|localhost)(:|/|$)"
+    explanation_en: "Fetches from a raw IP address or localhost"
+    explanation_zh: "从裸 IP 地址或 localhost 抓取"
+    risk_en: "Points at an internal/loopback host rather than a named service — can probe your own machine or private network."
+    risk_zh: "指向内网/回环地址而非公开服务 —— 可能在探测你本机或内网。"
+
+  - id: web-script-host
+    category: remote-content
+    severity: low
+    regex: "://([\\w.-]*\\.)?(raw\\.githubusercontent\\.com|gist\\.githubusercontent\\.com|pastebin\\.com|bit\\.ly|tinyurl\\.com|goo\\.gl)(:|/|$)"
+    explanation_en: "Fetches from a raw-content or URL-shortener host"
+    explanation_zh: "从 raw 内容托管站或短链服务抓取"
+    risk_en: "These hosts commonly serve unreviewed scripts and hide the real destination — check what is actually being fetched."
+    risk_zh: "这类主机常用于分发未经审查的脚本、并隐藏真实目的地 —— 请确认到底抓的是什么。"
+
+  - id: web-insecure-http
+    category: insecure-transport
+    severity: low
+    regex: "^http://"
+    explanation_en: "Fetches over plain HTTP (not HTTPS)"
+    explanation_zh: "使用明文 HTTP(非 HTTPS)抓取"
+    risk_en: "Traffic is unencrypted and can be read or tampered with in transit."
+    risk_zh: "流量未加密,传输途中可被读取或篡改。"

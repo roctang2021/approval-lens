@@ -4,9 +4,9 @@
 
 A Claude Code plugin that **explains pending permission prompts** instead of
 deciding for you. When Claude Code is about to show a permission dialog for a
-Bash command, Permission Lens annotates it with a plain-language explanation and
-a risk assessment — then **always falls through to the native dialog**. You make
-the call.
+**Bash / WebFetch / Write / Edit** action, Permission Lens annotates it with a
+plain-language explanation and a risk assessment — then **always falls through
+to the native dialog**. You make the call.
 
 ```
 🔴 HIGH · Pipes a downloaded script straight into a shell
@@ -28,13 +28,28 @@ Two tiers. The first is always on; the second is optional and off by default.
 
 | Tier | What | Cost | Network |
 | --- | --- | --- | --- |
-| **1 — static analyzer** | 36 bilingual rules (regex + shell-aware predicates) match the command offline and produce the severity/risk lines. | free | none |
+| **1 — static analyzer** | Bilingual rules match the pending action offline (shell command, URL, or file path) and produce the severity/risk lines. | free | none |
 | **2 — LLM explainer** *(opt-in)* | One `claude-haiku-4-5` call adds a `🤖` plain-language line, using **your own** API credentials. | your API usage | one HTTPS call, 3s hard timeout, SHA256-cached 7 days |
 
 Tier 2 **augments** Tier 1 — it never replaces it. If the model call is
 disabled, times out, errors, or you have no credentials, you still get the full
-Tier 1 annotation. The model sees **only the command string** (never your cwd,
-session, or transcript).
+Tier 1 annotation. The model sees **only the minimal subject** — the shell
+command, the URL, or the file path (Write/Edit file *contents* are never sent
+unless you opt in with `llm.send_file_content`). Never your cwd, session, or
+transcript.
+
+### What each tool's rules look at
+
+| Tool | `tool_input` | Risk signal | Examples |
+| --- | --- | --- | --- |
+| **Bash** | `command` | shell analysis | `curl … \| sh`, `rm -rf $VAR`, force-push, publish |
+| **WebFetch** | `url` | the URL | credentials in URL, secret in query string, IP/localhost target, raw-script hosts, plain HTTP |
+| **Write** | `file_path` (+`content`) | where it writes | `~/.ssh`, `.env`, shell rc files, git hooks, LaunchAgents, `/etc`, sudoers |
+| **Edit** | `file_path`, `new_string` | target path + injected content | same paths as Write, plus a `curl … \| sh`/`eval` injected into a file |
+
+Non-Bash tools only prompt in permission modes that ask about them (e.g. in
+`Accept edits` mode Write/Edit are auto-approved, so there's no dialog to
+annotate). MultiEdit is not covered yet.
 
 ## Install
 
@@ -120,6 +135,7 @@ hook. Full example: [`config.example.json`](config.example.json).
 | `llm.timeout_seconds` | 0.1–6.0 | 3.0 | Hard wall-clock deadline for the API call. |
 | `llm.api_key_env` / `llm.auth_token_env` | env var name | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Where to read your credential (see below). |
 | `llm.cache_ttl_days` | 0–365 | 7 | Response cache TTL; `0` disables the cache. |
+| `llm.send_file_content` | `true` \| `false` | `false` | Whether Tier 2 may send Write/Edit file *contents* (not just the path) to the model. Off by default. |
 
 ### Enabling Tier 2 (uses your own account)
 
@@ -144,7 +160,7 @@ supported way to bill these API calls to a subscription.
   scripts/check.sh
   ```
 
-- **Just the test suite** (160 tests, all offline):
+- **Just the test suite** (all offline):
 
   ```bash
   uv run --with pytest --with pyyaml python -m pytest tests/
@@ -179,9 +195,9 @@ MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
 
 [English](#permission-lens) · **中文**
 
-一个 Claude Code 插件,当权限弹框里是一串看不懂的 shell 命令时,给它**补一段大白话
-解释 + 风险评估**,然后**永远放行给原生弹框**——它绝不替你做 allow/deny 决定。要不要
-批准,由你来定。
+一个 Claude Code 插件,当权限弹框里是看不懂的操作(**Bash 命令 / WebFetch 抓取 /
+Write 写文件 / Edit 改文件**)时,给它**补一段大白话解释 + 风险评估**,然后**永远放行
+给原生弹框**——它绝不替你做 allow/deny 决定。要不要批准,由你来定。
 
 ```
 🔴 高 · 将下载的脚本直接管道给 shell 执行
@@ -201,11 +217,25 @@ MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
 
 | 层级 | 内容 | 费用 | 网络 |
 | --- | --- | --- | --- |
-| **Tier 1 — 静态分析** | 36 条双语规则(正则 + shell 感知谓词)离线匹配命令,产出严重度/风险行。 | 免费 | 无 |
+| **Tier 1 — 静态分析** | 双语规则离线匹配待批操作(shell 命令 / URL / 文件路径),产出严重度/风险行。 | 免费 | 无 |
 | **Tier 2 — 大模型解释**(需手动开启) | 一次 `claude-haiku-4-5` 调用,用**你自己的**凭据补一行 `🤖` 大白话。 | 记你自己的 API 账户 | 一次 HTTPS 调用,3 秒硬超时,SHA256 缓存 7 天 |
 
 Tier 2 是**追加**,绝不替代 Tier 1。模型调用未开启/超时/出错/没凭据时,你依然会看到
-完整的 Tier 1 注释。模型**只看到命令字符串本身**(绝不涉及 cwd、会话或 transcript)。
+完整的 Tier 1 注释。模型**只看到最小主体**——shell 命令、URL 或文件路径(Write/Edit 的
+文件**内容**默认不发送,除非你用 `llm.send_file_content` 开启),绝不涉及 cwd、会话或
+transcript。
+
+### 每个工具的规则看什么
+
+| 工具 | `tool_input` | 风险信号 | 例子 |
+| --- | --- | --- | --- |
+| **Bash** | `command` | shell 分析 | `curl … \| sh`、`rm -rf $VAR`、force-push、publish |
+| **WebFetch** | `url` | URL 本身 | URL 里带凭据、query 里带密钥、指向 IP/localhost、raw 脚本托管站、明文 HTTP |
+| **Write** | `file_path`(+`content`) | 写到哪 | `~/.ssh`、`.env`、shell rc 文件、git 钩子、LaunchAgents、`/etc`、sudoers |
+| **Edit** | `file_path`、`new_string` | 目标路径 + 注入内容 | 同 Write 的路径,外加往文件里注入 `curl … \| sh`/`eval` |
+
+非 Bash 工具只在会弹框问它们的权限模式下才有弹框(比如 `Accept edits` 模式下 Write/Edit
+自动放行,就没有弹框可注释)。MultiEdit 暂未覆盖。
 
 ## 安装
 
@@ -274,6 +304,7 @@ claude --plugin-dir /path/to/permission-lens
 | `llm.timeout_seconds` | 0.1–6.0 | 3.0 | API 调用的墙钟硬超时。 |
 | `llm.api_key_env` / `llm.auth_token_env` | 环境变量名 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | 从哪里读你的凭据(见下)。 |
 | `llm.cache_ttl_days` | 0–365 | 7 | 响应缓存 TTL;`0` 关闭缓存。 |
+| `llm.send_file_content` | `true` \| `false` | `false` | Tier 2 是否发送 Write/Edit 的文件**内容**(而非只发路径)。默认关闭。 |
 
 ### 开启 Tier 2(用你自己的账户)
 
@@ -296,7 +327,7 @@ claude --plugin-dir /path/to/permission-lens
   scripts/check.sh
   ```
 
-- **只跑测试套件**(160 个测试,全部离线):
+- **只跑测试套件**(全部离线):
 
   ```bash
   uv run --with pytest --with pyyaml python -m pytest tests/
