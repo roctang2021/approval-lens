@@ -893,6 +893,65 @@ def _osa_escape(text):
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
+# ── heartbeat ─────────────────────────────────────────────────────────────────
+#
+# Answers "is the plugin alive, and was that call actually checked?" without
+# touching the dialog: a clean dialog is otherwise indistinguishable from a
+# dead hook. Every analyzed invocation updates one small local state file —
+# timestamps, tool name, top severity, ask outcome; NEVER commands, URLs, or
+# paths. Best-effort SIDE EFFECT like the notifier: failures are swallowed,
+# stdout and exit codes untouched. Read it with scripts/lens-status.py.
+
+HEARTBEAT_FILE = "heartbeat.json"
+_COUNT_KEYS = ("total", "high", "medium", "low", "none", "asked")
+
+
+def record_heartbeat(tool, matches, asked):
+    try:
+        path = _cache_dir() / HEARTBEAT_FILE
+        now = time.time()
+        today = time.strftime("%Y-%m-%d", time.localtime(now))
+        state = {}
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if isinstance(loaded, dict):
+                state = loaded
+        except Exception:
+            pass  # missing/corrupt heartbeat -> start fresh
+        counts = state.get("counts") if state.get("today") == today else None
+        if not isinstance(counts, dict):
+            counts = {}
+        counts = {k: _nonneg_int(counts.get(k)) for k in _COUNT_KEYS}
+        severity = matches[0]["severity"] if matches else None
+        bucket = severity if severity in ("high", "medium", "low") else "none"
+        counts["total"] += 1
+        counts[bucket] += 1
+        if asked:
+            counts["asked"] += 1
+        fresh = {
+            "version": 1,
+            "updated": now,
+            "today": today,
+            "counts": counts,
+            "last": {"ts": now, "tool": tool, "severity": severity, "asked": bool(asked)},
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(fresh, fh, ensure_ascii=False)
+        os.replace(tmp, path)  # atomic; a concurrent hook loses a count, never the file
+    except Exception:
+        if os.environ.get("PERMISSION_LENS_DEBUG"):
+            _log_debug("heartbeat: " + traceback.format_exc())
+
+
+def _nonneg_int(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
 # ── M4 extension point (localhost panel — no-op today) ────────────────────────
 
 def notify(payload):
@@ -991,7 +1050,10 @@ def build_message(event, config=None):
     # Notification channel is independent of the ask gate (its own threshold),
     # so it runs first — it can flag calls that will auto-run without a dialog.
     maybe_notify(tool_name, matches, neutral, config, config["lang"])
-    if not passes_threshold(matches, config["ask"]["min_severity"]):
+    asked = passes_threshold(matches, config["ask"]["min_severity"])
+    # Heartbeat: prove "this call was checked" even when the answer is {}.
+    record_heartbeat(tool_name, matches, asked)
+    if not asked:
         return None
     # Tier 2 runs only for calls we're actually going to put on a dialog.
     llm_text = tier2_explanation(subject, config, kind)

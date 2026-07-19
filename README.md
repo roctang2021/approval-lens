@@ -212,6 +212,18 @@ supported way to bill these API calls to a subscription.
 
   A high match prints the `"ask"` + reason JSON; a benign command prints `{}`.
 
+- **Check the plugin is alive** (heartbeat): a clean dialog looks identical to
+  a dead hook, so every analyzed call also updates a local heartbeat file
+  (timestamps, tool name, severity, ask outcome — **never** commands, URLs, or
+  paths). Read it any time:
+
+  ```bash
+  python3 scripts/lens-status.py
+  # Permission Lens 0.6.0
+  # last check 12s ago (Bash · no match · silent)
+  # today: 47 checked · 🔴 2 · 🟡 5 · 🟢 0 · no match 40 · dialogs forced 2
+  ```
+
 - **Interactive / Desktop / config walkthroughs**: see
   [`scripts/manual-test.md`](scripts/manual-test.md).
 
@@ -230,7 +242,8 @@ supported way to bill these API calls to a subscription.
   labels to decode.
 - **Tier 1 is offline and stdlib-only** (PyYAML aside) and runs in <10ms.
 - **Your data stays local.** Tier 2 sends only the command string, over TLS,
-  using only your own credentials.
+  using only your own credentials. The heartbeat file stores only timestamps,
+  tool names, severities, and ask outcomes — no command/URL/path ever.
 
 MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
 [NOTES.md](NOTES.md).
@@ -419,6 +432,17 @@ claude --plugin-dir /path/to/permission-lens
 
   高危命中会打印 `"ask"` + reason 的 JSON;良性命令打印 `{}`。
 
+- **确认插件活着**(心跳):素颜弹框和 hook 挂掉看起来一模一样,所以每次被分析的
+  调用都会更新一个本地心跳文件(时间戳、工具名、严重度、是否弹框——**绝不含**命令、
+  URL 或路径)。随时看一眼:
+
+  ```bash
+  python3 scripts/lens-status.py
+  # Permission Lens 0.6.0
+  # 最近一次检查 12 秒前(Bash · 无命中 · 未弹框)
+  # 今日已检查 47 次 · 🔴 2 · 🟡 5 · 🟢 0 · 无命中 40 · 弹框 2
+  ```
+
 - **交互 / 桌面 / 配置的逐步验证**:见
   [`scripts/manual-test.md`](scripts/manual-test.md)。
 
@@ -433,6 +457,7 @@ claude --plugin-dir /path/to/permission-lens
 - **单行大白话。** 弹框会折叠换行,所以解释是一句可独立读懂的完整句子——不带术语,
   不用查任何东西。
 - **Tier 1 离线、仅标准库**(PyYAML 除外),运行 <10ms。
-- **数据留在本地。** Tier 2 只发送命令字符串,走 TLS,只用你自己的凭据。
+- **数据留在本地。** Tier 2 只发送命令字符串,走 TLS,只用你自己的凭据。心跳文件
+  只存时间戳、工具名、严重度和弹框与否——绝不存命令/URL/路径。
 
 MIT —— 见 [LICENSE](LICENSE)。schema 验证与设计记录见 [NOTES.md](NOTES.md)。

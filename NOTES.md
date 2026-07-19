@@ -402,3 +402,31 @@ decided/implemented.
   "always allow" options (dialog showed only Deny / Allow once — needs a
   no-probe comparison); (b) CLI rendering of the reason; (c) the M4 panel
   decision — deprioritized now that high-risk explanations are on the dialog.
+
+## M8 (2026-07-19): heartbeat — "checked and clean" vs "hook never ran"
+
+- **Why** (owner request): with M7, a benign call leaves the dialog bare by
+  design — indistinguishable from a dead hook. The owner first asked for a 💚
+  badge on benign dialogs; that is structurally impossible without gatekeeping
+  (dialog text only rides on "ask", "ask" floors at a prompt, and PreToolUse
+  cannot know whether a prompt would have happened anyway — the rejected
+  "info"-threshold in another costume). Heartbeat solves the underlying need
+  off-dialog.
+- **Mechanism**: `record_heartbeat(tool, matches, asked)` runs on every
+  analyzed invocation (after the notify side effect, before the ask gate
+  returns) and atomically rewrites `<cache>/heartbeat.json`: last {ts, tool,
+  severity, asked} + per-day counters {total, high, medium, low, none, asked},
+  reset on date change. tmp + os.replace like the LLM cache — a concurrent
+  hook can lose a count, never corrupt the file. Privacy: NEVER stores
+  commands/URLs/paths.
+- **Invariants preserved**: best-effort side effect wrapped in try/except
+  (tested: os.replace raising leaves build_message returning the normal
+  reason); stdout/exit untouched; corrupt heartbeat file is replaced, not
+  fatal.
+- **Reader**: `scripts/lens-status.py` (stdlib, plain python3) prints version,
+  last-check age/tool/outcome, and today's counters; honors
+  PERMISSION_LENS_CACHE_DIR / PERMISSION_LENS_CONFIG, bilingual via config
+  lang.
+- **Tests**: conftest gained an autouse `_hermetic_cache` fixture (all
+  in-process cache writes go to tmp — heartbeat made the pre-existing gap
+  matter). Suite: 232 tests (+7 in test_heartbeat.py). Plugin version 0.6.0.
