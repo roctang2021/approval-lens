@@ -72,7 +72,10 @@ DEFAULT_CONFIG = {
         "enabled": False,                # Tier 2 is strictly opt-in
         "model": "claude-haiku-4-5",
         "timeout_seconds": 3.0,          # hard wall-clock deadline for the API call
+        # Credential resolution order: api_key_env (x-api-key header), then
+        # auth_token_env (OAuth bearer, e.g. from `ant auth print-credentials`).
         "api_key_env": "ANTHROPIC_API_KEY",
+        "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
         "cache_ttl_days": 7,             # 0 disables the response cache
     },
 }
@@ -122,6 +125,8 @@ def _validate_config(raw):
             _TIMEOUT_MIN, _TIMEOUT_MAX)
         if isinstance(llm_raw.get("api_key_env"), str) and llm_raw["api_key_env"].strip():
             llm["api_key_env"] = llm_raw["api_key_env"].strip()
+        if isinstance(llm_raw.get("auth_token_env"), str) and llm_raw["auth_token_env"].strip():
+            llm["auth_token_env"] = llm_raw["auth_token_env"].strip()
         llm["cache_ttl_days"] = _clamped_number(
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
     return cfg
@@ -530,6 +535,9 @@ def _truncate(text, max_chars):
 # POST https://api.anthropic.com/v1/messages with x-api-key + anthropic-version.
 LLM_API_URL = "https://api.anthropic.com/v1/messages"
 LLM_API_VERSION = "2023-06-01"
+# OAuth bearer tokens (e.g. from `ant auth login`) go on `Authorization: Bearer`
+# and require this beta header on /v1/messages — an API key uses x-api-key.
+LLM_OAUTH_BETA = "oauth-2025-04-20"
 LLM_MAX_TOKENS = 300
 # Dialogs show short commands; skip Tier 2 for pathological inputs.
 LLM_MAX_COMMAND_CHARS = 4000
@@ -563,12 +571,12 @@ def tier2_explanation(command, config):
         cached = _cache_lookup(cache_path, ttl_days)
         if cached is not None:
             return _one_line(cached) or None
-        api_key = os.environ.get(llm.get("api_key_env") or "", "").strip()
-        if not api_key:
+        credential = _resolve_credential(llm)
+        if credential is None:
             return None
         timeout = llm["timeout_seconds"]
         text = _run_with_deadline(
-            lambda: _post_messages_api(command, model, lang, api_key, timeout),
+            lambda: _post_messages_api(command, model, lang, credential, timeout),
             timeout,
         )
         text = _one_line(text or "")
@@ -588,7 +596,22 @@ def _one_line(text):
     return " ".join(text.split())
 
 
-def _post_messages_api(command, model, lang, api_key, timeout):
+def _resolve_credential(llm):
+    """User's own credentials only, from env: API key first, OAuth token second.
+
+    Returns ("api_key", value) or ("oauth", value), or None when neither env
+    var is set — subscription-only users without either simply get Tier 1.
+    """
+    api_key = os.environ.get(llm.get("api_key_env") or "", "").strip()
+    if api_key:
+        return ("api_key", api_key)
+    token = os.environ.get(llm.get("auth_token_env") or "", "").strip()
+    if token:
+        return ("oauth", token)
+    return None
+
+
+def _post_messages_api(command, model, lang, credential, timeout):
     # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
     import urllib.request
 
@@ -600,16 +623,17 @@ def _post_messages_api(command, model, lang, api_key, timeout):
         "system": LLM_SYSTEM_PROMPT.get(lang, LLM_SYSTEM_PROMPT["en"]),
         "messages": [{"role": "user", "content": command}],
     }).encode("utf-8")
-    req = urllib.request.Request(
-        LLM_API_URL,
-        data=body,
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": LLM_API_VERSION,
-        },
-        method="POST",
-    )
+    headers = {
+        "content-type": "application/json",
+        "anthropic-version": LLM_API_VERSION,
+    }
+    kind, value = credential
+    if kind == "api_key":
+        headers["x-api-key"] = value
+    else:  # OAuth bearer token — different header AND a required beta flag
+        headers["authorization"] = f"Bearer {value}"
+        headers["anthropic-beta"] = LLM_OAUTH_BETA
+    req = urllib.request.Request(LLM_API_URL, data=body, headers=headers, method="POST")
     # Socket-level timeout; the wall-clock cap is enforced by _run_with_deadline.
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))

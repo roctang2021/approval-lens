@@ -95,8 +95,12 @@ def test_llm_enabled_without_key_still_fails_open():
     # Tier 1 message — single JSON object, exit 0, no decision, no network hang.
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "config.json"
+        # Point BOTH credential env names at unset vars — otherwise a real
+        # ANTHROPIC_AUTH_TOKEN in the developer's shell would make this go live.
         config_path.write_text(json.dumps({
-            "llm": {"enabled": True, "api_key_env": "PERMISSION_LENS_NO_SUCH_KEY"},
+            "llm": {"enabled": True,
+                    "api_key_env": "PERMISSION_LENS_NO_SUCH_KEY",
+                    "auth_token_env": "PERMISSION_LENS_NO_SUCH_TOKEN"},
         }), encoding="utf-8")
         proc = _run(
             CASES["valid_bash"].encode("utf-8"),

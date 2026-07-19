@@ -128,9 +128,16 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
 
 ### Tier 2 LLM explainer (default OFF)
 
-- **Opt-in only**: `llm.enabled: true` + an API key in `$ANTHROPIC_API_KEY`
-  (env var name configurable via `llm.api_key_env`). Without both, the code
-  path returns before any network import/IO.
+- **Opt-in only, user's own credentials only**: `llm.enabled: true` plus a
+  credential from the user's environment. Resolution order: `$ANTHROPIC_API_KEY`
+  (sent as `x-api-key`) then `$ANTHROPIC_AUTH_TOKEN` (OAuth bearer, e.g. from
+  `ant auth login` / `ant auth print-credentials --access-token`; sent as
+  `Authorization: Bearer` + required `anthropic-beta: oauth-2025-04-20`).
+  Both env var names are configurable (`llm.api_key_env` / `llm.auth_token_env`).
+  Without a credential, the code path returns before any network import/IO —
+  subscription-only users simply keep Tier 1. Note: Claude Code's own login
+  credential is NOT touched; there is no supported way to bill Tier 2 to a
+  Pro/Max subscription.
 - Raw HTTP via stdlib `urllib` (no SDK dependency): `POST
   https://api.anthropic.com/v1/messages`, headers `x-api-key` +
   `anthropic-version: 2023-06-01`, model `claude-haiku-4-5` (alias verified
@@ -157,7 +164,7 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   content first.
 - `lang: "zh"` now also localizes the neutral ℹ️ summaries (M1 had rule
   explanations bilingual but summaries EN-only) and the Tier 2 system prompt.
-- Suite: 158 tests (was 123); Tier 2 tests are fully offline via monkeypatched
+- Suite: 160 tests (was 123); Tier 2 tests are fully offline via monkeypatched
   `urllib.request.urlopen`. The no-network guards *record* calls and assert the
   list stays empty — a raised exception alone would be swallowed by the
   deadline worker and the tests would pass vacuously.

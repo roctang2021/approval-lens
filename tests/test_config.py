@@ -56,7 +56,7 @@ def test_invalid_values_fall_back_per_key(monkeypatch, tmp_path):
         "min_severity_to_annotate": "banana",
         "max_message_chars": "lots",
         "llm": {"enabled": "yes", "model": "", "timeout_seconds": True,
-                "api_key_env": 42, "cache_ttl_days": "week"},
+                "api_key_env": 42, "auth_token_env": "  ", "cache_ttl_days": "week"},
     })
     assert cfg["lang"] == "en"
     assert cfg["min_severity_to_annotate"] == "info"
@@ -65,6 +65,7 @@ def test_invalid_values_fall_back_per_key(monkeypatch, tmp_path):
     assert cfg["llm"]["model"] == pl.DEFAULT_CONFIG["llm"]["model"]
     assert cfg["llm"]["timeout_seconds"] == pl.DEFAULT_CONFIG["llm"]["timeout_seconds"]
     assert cfg["llm"]["api_key_env"] == pl.DEFAULT_CONFIG["llm"]["api_key_env"]
+    assert cfg["llm"]["auth_token_env"] == pl.DEFAULT_CONFIG["llm"]["auth_token_env"]
     assert cfg["llm"]["cache_ttl_days"] == pl.DEFAULT_CONFIG["llm"]["cache_ttl_days"]
 
 
