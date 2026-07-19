@@ -1,14 +1,16 @@
 {
   "name": "permission-lens",
-  "owner": { "name": "roctang2021" },
+  "owner": {
+    "name": "roctang2021"
+  },
   "metadata": {
-    "description": "Single-plugin marketplace for Permission Lens — plain-language explanations for Claude Code permission prompts."
+    "description": "Single-plugin marketplace for Permission Lens — plain-language risk explanations on Claude Code permission dialogs."
   },
   "plugins": [
     {
       "name": "permission-lens",
       "source": "./",
-      "description": "Explains pending permission prompts in plain language — annotates the dialog, never decides for you."
+      "description": "Puts a plain-language risk explanation on the permission dialog for risky operations — asks, never decides for you."
     }
   ]
 }

@@ -115,6 +115,47 @@ display that's actually visible today. See the M6 section below.
 Still pending (lower priority): `-p` non-interactive behavior (brief says
 `PermissionRequest` doesn't fire without a human) — confirm via `--debug`.
 
+**PreToolUse `"ask"` reason rendering — VERIFIED 2026-07-19 (Desktop): IT RENDERS
+ON THE DIALOG.** This reopens the inline-annotation premise that the
+systemMessage finding above had closed.
+
+Probe: `scripts/probe-pretooluse-ask/` (always returns
+`permissionDecision: "ask"` + a marker reason; logs stdin/stdout to
+`~/.cache/permission-lens/probe-ask.log`), registered via a scratch project's
+`.claude/settings.json` at `~/Code/oss/pl-ask-probe`. Docs basis: hooks §
+PreToolUse decision control — for `"allow"`/`"ask"` the reason is "shown to the
+user but not Claude"; CHANGELOG 2.1.211 — "a hook `ask` now floors the decision
+at a prompt". Findings from a live Desktop session (screenshot-verified,
+`permission_mode: "acceptEdits"`):
+
+- **The marker text renders inside the permission dialog body**, between the
+  tool description line and the command box. Exactly the surface Permission
+  Lens needs.
+- **`\n` collapses** — both marker lines flowed as one wrapped paragraph, so
+  annotations must be written as a single flowing line (separator like ` · `),
+  not relying on newlines.
+- **No origin label seen** (`[Project]`/`[Local]`) on this dialog, despite the
+  docs mentioning one.
+- **Buttons were Deny / "Allow once" only** — no "always allow" /
+  permission-suggestion options. Unconfirmed whether hook-`ask` suppresses
+  those or this dialog just wouldn't have offered them; compare against a
+  no-probe prompt before concluding.
+- Payload note: the PreToolUse event carries `tool_use_id`, `prompt_id`,
+  `effort`, plus the usual `session_id`/`cwd`/`permission_mode` — richer than
+  PermissionRequest's.
+
+Still pending on this probe: (a) the floors-at-a-prompt friction test — allow
+`ls` permanently (if offered anywhere), rerun, does the dialog still appear?
+(b) same probe in a terminal `claude` session (settings-registered, so also a
+data point on the CLI-plugin-hook mystery above).
+
+**Consequence**: migrating the annotation to a PreToolUse hook that returns
+`"ask"` + reason only at high severity (`{}` otherwise) would put explanations
+on the dialog itself, at the cost of forcing prompts for annotated calls that
+rules would have auto-allowed. Severity gating keeps that cost aligned with the
+product story ("risky operations always prompt, with an explanation"). Not yet
+decided/implemented.
+
 ## Design decisions
 
 - **Never a gatekeeper.** No `hookSpecificOutput` is ever emitted. Fail open on any
@@ -310,3 +351,54 @@ Still pending (lower priority): `-p` non-interactive behavior (brief says
 - Suite: 219 tests (was 204); +`tests/test_notify.py`, fully offline
   (`send_desktop_notification` / `subprocess.run` monkeypatched, platform guard
   tested both ways). Plugin version 0.4.0.
+
+## M7 (2026-07-19): migration to PreToolUse "ask" — the explanation reaches the dialog
+
+- **Why**: the PreToolUse probe (§ above) proved `permissionDecision: "ask"` +
+  `permissionDecisionReason` renders ON the Desktop permission dialog — the
+  surface the whole product wanted since M1 and that PermissionRequest's
+  `systemMessage` could not reach. The plugin now uses it.
+- **New contract** (`hooks.json` event: PermissionRequest → PreToolUse):
+  - Rule match at/above `ask.min_severity` (new config, default `high`;
+    accepts `low|medium|high`, rejects `info` — it would prompt on every call)
+    → `{"hookSpecificOutput": {"hookEventName": "PreToolUse",
+    "permissionDecision": "ask", "permissionDecisionReason": <one line>}}`.
+  - Everything else → `{}`. No `systemMessage` anywhere anymore: on PreToolUse
+    it could render per-call noise in transcripts, and the reason is the
+    channel now.
+  - Never-gatekeeper restated for the new event: the ONLY decision ever
+    emitted is `"ask"` — never allow/deny. "Ask" floors the decision at a
+    prompt (CHANGELOG 2.1.211): a flagged-but-allowlisted call now prompts.
+    Default `high` keeps that friction ~zero (🔴 commands are essentially
+    never allowlisted); `medium` is the user's explicit opt-in (owner decision
+    2026-07-19: 🟡 as a config option, not default).
+  - Fail-open unchanged, but exit 2 now means BLOCK (not deny) — same
+    conclusion: `{}` + exit 0 on every failure path.
+- **Single-line reasons**: the probe showed the dialog collapses `\n`, so
+  `render_reason` (replaces `format_message`/`render_message`) emits one line:
+  `{emoji} {label} · {risk sentence}` + ≤2 extra `{emoji} {explanation}` parts
+  + optional `🤖 {tier2}`; every part passed through `_one_line`.
+- **Copy pass** (owner request: natural language, nothing to look up): every
+  `risk_*` in rules.yaml / rules_web.yaml / rules_path.yaml rewritten as one
+  self-contained plain sentence (what it does + concrete consequence, no
+  shell jargon), both languages; `explanation_*` now a jargon-free short
+  phrase (used by notifications and the extras). Regexes/ids/severities
+  untouched — the analyzer and corpus tests are unaffected.
+- **Notification channel repositioned**: `maybe_notify` now runs BEFORE the
+  ask gate (independent thresholds). On PreToolUse it fires pre-permission,
+  so it can flag calls that auto-run with no dialog — documented in README as
+  a "this just happened" heads-up. `min_severity_to_annotate` is gone
+  (annotation now only exists when asking); old configs carrying it just get
+  the key ignored by per-key validation.
+- **Removed**: `format_message`, `render_message`, `RISK_LABEL`, the ℹ️
+  neutral-summary output path (neutral summaries survive for info-level
+  notifications only).
+- Suite: 225 tests (was 219) — output contract rewritten around ask/{} (incl.
+  "only ever ask", "no systemMessage", medium-silent-by-default,
+  medium-asks-when-configured), ask-threshold gate tests, single-line
+  assertions; `check.sh` smoke test now asserts ask-for-dangerous and
+  `{}`-for-benign. Plugin version 0.5.0.
+- Still pending from the probe: (a) whether hook-`ask` suppresses the
+  "always allow" options (dialog showed only Deny / Allow once — needs a
+  no-probe comparison); (b) CLI rendering of the reason; (c) the M4 panel
+  decision — deprioritized now that high-risk explanations are on the dialog.

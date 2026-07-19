@@ -1,7 +1,7 @@
 {
-  "description": "Permission Lens — annotates Bash/WebFetch/Write/Edit permission dialogs with a plain-language risk explanation. Never returns a decision; the native dialog always shows.",
+  "description": "Permission Lens — puts a plain-language risk explanation on the permission dialog for risky Bash/WebFetch/Write/Edit calls (permissionDecision \"ask\" + reason). Never returns allow/deny; below the ask threshold it prints {} and native behavior is untouched.",
   "hooks": {
-    "PermissionRequest": [
+    "PreToolUse": [
       {
         "matcher": "Bash|WebFetch|Write|Edit",
         "hooks": [

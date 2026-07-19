@@ -27,7 +27,8 @@ def _all_commands():
 def _analyze_once(command):
     parsed = pl.Parsed(command)
     matches = pl.analyze(parsed)
-    pl.format_message(parsed, matches)
+    if matches:
+        pl.render_reason(matches)
 
 
 def test_each_command_under_50ms():

@@ -1,6 +1,8 @@
 {
   "lang": "en",
-  "min_severity_to_annotate": "info",
+  "ask": {
+    "min_severity": "high"
+  },
   "max_message_chars": 500,
   "llm": {
     "enabled": false,

@@ -259,13 +259,13 @@ def test_hard_deadline_abandons_slow_call(monkeypatch):
 
 # ── integration with build_message ────────────────────────────────────────────
 
-def test_llm_line_appended_after_tier1_lines(monkeypatch):
+def test_llm_text_appended_last_on_the_single_line(monkeypatch):
     _install_fake_api(monkeypatch, text="Pipes a downloaded script into bash.")
     event = {"tool_name": "Bash", "tool_input": {"command": COMMAND}}
-    msg = pl.build_message(event, _config())
-    lines = msg.splitlines()
-    assert lines[0].startswith("🔴")
-    assert lines[-1] == "🤖 Pipes a downloaded script into bash."
+    reason = pl.build_message(event, _config())
+    assert reason.startswith("🔴")
+    assert reason.endswith("🤖 Pipes a downloaded script into bash.")
+    assert "\n" not in reason  # the dialog collapses newlines
 
 
 def test_tier1_message_survives_llm_failure(monkeypatch):

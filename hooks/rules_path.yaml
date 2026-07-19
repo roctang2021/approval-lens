@@ -5,6 +5,9 @@
 #   content           — the written content (Write) or new_string (Edit)
 # Path patterns use substring anchors like `(^|/)` so they match whether the
 # path is absolute (/Users/x/.ssh/id_rsa) or ~-relative (.ssh/id_rsa).
+# Copy contract (same as rules.yaml): risk_* is one self-contained
+# plain-language sentence (the dialog headline); explanation_* is a short
+# jargon-free phrase for notifications and extra-risk entries.
 
 rules:
   # ── credential / secret files ─────────────────────────────────────────────
@@ -12,93 +15,93 @@ rules:
     category: credential-access
     severity: high
     regex: "(^|/)\\.ssh/"
-    explanation_en: "Writes into your ~/.ssh directory"
-    explanation_zh: "写入你的 ~/.ssh 目录"
-    risk_en: "SSH keys and config live here; a change can grant or redirect remote access."
-    risk_zh: "SSH 密钥和配置都在这里,改动可能授予或改变远程访问权限。"
+    explanation_en: "Writes into your SSH key folder"
+    explanation_zh: "写入你的 SSH 密钥目录"
+    risk_en: "This writes into your ~/.ssh folder, where your server login keys live — a change here can hand out or redirect access to your servers."
+    risk_zh: "这是在写你的 ~/.ssh 目录——你登录服务器的密钥都在这里，改动可能把访问权交出去或者改道。"
 
   - id: path-aws
     category: credential-access
     severity: high
     regex: "(^|/)\\.aws/"
-    explanation_en: "Writes into your ~/.aws credentials directory"
-    explanation_zh: "写入你的 ~/.aws 凭据目录"
-    risk_en: "Holds AWS access keys and profiles — a change can hand over cloud credentials."
-    risk_zh: "存放 AWS 访问密钥与 profile —— 改动可能交出云凭据。"
+    explanation_en: "Writes into your AWS credentials folder"
+    explanation_zh: "写入你的 AWS 凭据目录"
+    risk_en: "This writes into your ~/.aws folder, where your cloud access keys live — a change here can hand over control of your cloud account."
+    risk_zh: "这是在写你的 ~/.aws 目录——云访问密钥都在这里，改动可能把你云账户的控制权交出去。"
 
   - id: path-dotenv
     category: credential-access
     severity: medium
     regex: "(^|/)\\.env(\\.[\\w.-]+)?$"
-    explanation_en: "Writes a .env environment file"
-    explanation_zh: "写入 .env 环境变量文件"
-    risk_en: ".env files usually hold API keys and secrets — verify what is being written."
-    risk_zh: ".env 文件通常存放 API 密钥和机密 —— 请确认写入了什么。"
+    explanation_en: "Writes a .env secrets file"
+    explanation_zh: "写入 .env 机密文件"
+    risk_en: "This writes a .env file, which usually holds API keys and passwords — worth reading exactly what is being written into it."
+    risk_zh: "这是在写 .env 文件——里面通常放着 API 密钥和密码，值得逐行看清到底写入了什么。"
 
   # ── persistence / auto-run ────────────────────────────────────────────────
   - id: path-shell-rc
     category: persistence
     severity: medium
     regex: "(^|/)\\.(bash_profile|bashrc|zshrc|zprofile|zshenv|profile)$"
-    explanation_en: "Writes a shell startup file (.zshrc/.bashrc/…)"
-    explanation_zh: "写入 shell 启动文件(.zshrc/.bashrc/…)"
-    risk_en: "This runs on every new shell — a good hiding spot for a persistent command."
-    risk_zh: "每开一个新 shell 都会执行 —— 是藏持久化命令的好地方。"
+    explanation_en: "Writes your shell startup file"
+    explanation_zh: "写入 shell 启动文件"
+    risk_en: "This writes your shell startup file — whatever lands in it runs every time you open a terminal from now on."
+    risk_zh: "这是在写你的 shell 启动文件——写进去的内容，以后每开一个终端都会执行一遍。"
 
   - id: path-git-hooks
     category: persistence
     severity: high
     regex: "(^|/)\\.git/hooks/"
-    explanation_en: "Writes a git hook"
-    explanation_zh: "写入 git 钩子"
-    risk_en: "Git hooks execute automatically on commit/push/checkout, with your privileges."
-    risk_zh: "git 钩子会在 commit/push/checkout 时以你的权限自动执行。"
+    explanation_en: "Writes an auto-running git hook"
+    explanation_zh: "写入自动运行的 git 钩子"
+    risk_en: "This writes a git hook — a script that from now on runs by itself on every commit or push, with your full permissions."
+    risk_zh: "这是在写 git 钩子——从此每次 commit/push 它都会以你的权限自动运行。"
 
   - id: path-ci-workflow
     category: persistence
     severity: medium
     regex: "(^|/)\\.github/workflows/"
-    explanation_en: "Writes a GitHub Actions workflow"
-    explanation_zh: "写入 GitHub Actions 工作流"
-    risk_en: "CI workflows run on push and can access repo secrets — review the change."
-    risk_zh: "CI 工作流会在 push 时运行、可访问仓库机密 —— 请审查改动。"
+    explanation_en: "Writes a CI workflow file"
+    explanation_zh: "写入 CI 工作流文件"
+    risk_en: "This writes a CI workflow — it runs on the next push and can reach your repository's stored secrets."
+    risk_zh: "这是在写 CI 工作流——下次 push 就会运行，而且能接触仓库里保存的机密。"
 
   - id: path-launch-agent
     category: persistence
     severity: high
     regex: "(^|/)Library/Launch(Agents|Daemons)/"
-    explanation_en: "Writes a macOS LaunchAgent/LaunchDaemon"
-    explanation_zh: "写入 macOS LaunchAgent/LaunchDaemon"
-    risk_en: "These start programs automatically at login/boot — a classic persistence mechanism."
-    risk_zh: "它们会在登录/开机时自动启动程序 —— 典型的持久化手段。"
+    explanation_en: "Writes a macOS auto-start entry"
+    explanation_zh: "写入 macOS 自启动项"
+    risk_en: "This writes a macOS auto-start entry — the program it points at will launch itself at every login or boot from now on."
+    risk_zh: "这是在写 macOS 的自启动项——它指向的程序，以后每次登录/开机都会自己启动。"
 
   - id: path-cron
     category: persistence
     severity: medium
     regex: "(^|/)(crontab$|cron\\.d/|etc/cron)"
-    explanation_en: "Writes a cron schedule"
-    explanation_zh: "写入 cron 定时任务"
-    risk_en: "Cron entries run commands on a schedule, unattended."
-    risk_zh: "cron 条目会按计划在无人值守时执行命令。"
+    explanation_en: "Writes a scheduled task"
+    explanation_zh: "写入定时任务"
+    risk_en: "This writes a scheduled-task entry — its commands will run automatically on a timer from now on, unattended."
+    risk_zh: "这是在写定时任务——里面的命令从此会在无人值守时按时自动运行。"
 
   # ── privileged / system ───────────────────────────────────────────────────
   - id: path-sudoers
     category: privilege
     severity: high
     regex: "(^|/)sudoers"
-    explanation_en: "Writes a sudoers file"
-    explanation_zh: "写入 sudoers 文件"
-    risk_en: "sudoers controls who can run commands as root — a change can grant privilege escalation."
-    risk_zh: "sudoers 决定谁能以 root 运行命令 —— 改动可能授予提权能力。"
+    explanation_en: "Writes the administrator-rights file"
+    explanation_zh: "写入管理员权限配置文件"
+    risk_en: "This writes the sudoers file, which decides who gets administrator power on this machine — a change here can grant permanent root access."
+    risk_zh: "这是在写 sudoers 文件——它决定谁能拿到这台机器的管理员权限，改动可能永久授予 root 权限。"
 
   - id: path-etc
     category: privilege
     severity: medium
     regex: "^/etc/"
-    explanation_en: "Writes into /etc (system configuration)"
-    explanation_zh: "写入 /etc(系统配置)"
-    risk_en: "System-wide config affecting all users; usually needs root and rarely what an edit should touch."
-    risk_zh: "影响所有用户的系统级配置;通常需要 root,一般不该被普通编辑触及。"
+    explanation_en: "Writes system-wide settings (/etc)"
+    explanation_zh: "写入系统级配置（/etc）"
+    risk_en: "This writes into /etc, the system-wide settings area — changes there affect every user and program on the machine."
+    risk_zh: "这是在写 /etc 系统配置区——那里的改动会影响这台机器上的所有用户和程序。"
 
   # ── content injection (Edit new_string / Write content) ───────────────────
   - id: content-remote-exec
@@ -106,7 +109,7 @@ rules:
     severity: high
     field: content
     regex: "(curl|wget)\\b[^\\n|]*\\|\\s*(ba)?sh\\b|(^|\\s|;|&)eval\\s"
-    explanation_en: "Inserts a download-and-run or eval into the file"
-    explanation_zh: "向文件里插入下载即执行或 eval"
-    risk_en: "Embedding `curl … | sh` or `eval` in a file makes it run unreviewed remote code when the file is executed."
-    risk_zh: "在文件里嵌入 `curl … | sh` 或 `eval`,会在文件被执行时运行未经审查的远程代码。"
+    explanation_en: "Written content downloads and runs code"
+    explanation_zh: "写入内容含下载即执行"
+    risk_en: "The text being written contains a download-and-run (or eval) command — whenever this file later runs, it will pull code from the internet and execute it unreviewed."
+    risk_zh: "写入的内容里含有下载即执行（或 eval）的命令——这个文件将来一旦被运行，就会从网上拉代码直接执行，没人审查。"

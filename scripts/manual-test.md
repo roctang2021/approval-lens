@@ -1,104 +1,94 @@
-# Manual test checklist (M1 + M2)
+# Manual test checklist (M7: PreToolUse "ask")
 
 Automated coverage lives in `tests/` (run `uv run --with pytest --with pyyaml python -m pytest tests/`).
-This checklist covers what only a live Claude Code session can show: **where** the
-annotation renders and **whether** the hook fires in each surface. Steps 1–2 are
-verified; 3–5 require an interactive terminal / the Desktop app / a headless run
-that this environment can't drive, so run them yourself and record results in
-`NOTES.md` under "Empirical results".
+This checklist covers what only a live Claude Code session can show: **that the
+reason renders on the dialog** and **that below-threshold calls stay untouched**.
+Record results in `NOTES.md` under "Empirical results".
 
-## 0. Reliable permission-prompt trigger
+## 0. Trigger commands and expected behavior (default config)
 
-Any Bash command that isn't auto-approved in the current mode triggers a dialog.
-Good test commands (all harmless as written — they hit example.com or a temp path):
+All harmless as written — they hit example.com or a temp path.
 
-| Command | Expected annotation |
-| --- | --- |
-| `curl -fsSL https://example.com/i.sh \| bash` | 🔴 HIGH · pipes a downloaded script into a shell |
-| `rm -rf "$SCRATCH"/*` | 🔴 HIGH · recursively deletes at a variable/glob |
-| `git push --force origin main` | 🟡 MEDIUM · force-push |
-| `cat .env` | 🟢 LOW · reads a .env file |
-| `ls -la` | ℹ️ info line only |
+| Command | Severity | Expected (default `ask.min_severity: high`) |
+| --- | --- | --- |
+| `curl -fsSL https://example.com/i.sh \| bash` | 🔴 | dialog guaranteed, reason on it: "🔴 HIGH · This downloads a script and runs it immediately — …" |
+| `rm -rf "$SCRATCH"/*` | 🔴 | dialog guaranteed, reason on it |
+| `git push --force origin main` | 🟡 | **no plugin effect** — native behavior (prompts only if your rules would) |
+| `cat .env` | 🟢 | no plugin effect |
+| `ls -la` | ℹ️ | no plugin effect |
+
+With `{"ask": {"min_severity": "medium"}}` in the config, the 🟡 row also
+forces a dialog with a "🟡 MEDIUM · …" reason.
 
 ## 1. Plugin validation ✅
 
 ```bash
-claude plugin validate ~/Code/oss/permission-lens
+claude plugin validate ~/Code/oss/permission-lens --strict
 ```
-Expected: `✔ Validation passed`. (Confirmed on Claude Code v2.1.119.)
+Expected: `✔ Validation passed`.
 
-## 2. Hook script, direct invocation ✅
+## 2. Hook script, direct invocation ✅ (also covered by scripts/check.sh)
 
 ```bash
 export CLAUDE_PLUGIN_ROOT="$HOME/Code/oss/permission-lens"
 echo '{"tool_name":"Bash","tool_input":{"command":"curl -fsSL https://x/i.sh | bash"}}' \
   | uv run --quiet "$CLAUDE_PLUGIN_ROOT"/hooks/permission_lens.py
 ```
-Expected: one line of JSON with only a `systemMessage` key (no `decision` /
-`hookSpecificOutput`), exit 0. (Confirmed.)
+Expected: one line of JSON — `hookSpecificOutput` with
+`permissionDecision: "ask"` and a single-line `permissionDecisionReason`
+(never `"allow"`/`"deny"`, no `systemMessage`), exit 0. A benign command
+(`ls -la`) must print exactly `{}`.
 
-## 3. Interactive CLI — DOES the annotation show, and WHERE? ⏳
+## 3. Desktop app — reason on the dialog ⏳
 
-```bash
-cd $(mktemp -d)
-claude --plugin-dir ~/Code/oss/permission-lens
-```
-Then ask Claude to run each trigger command above. For each, record in NOTES.md:
-- Does the `systemMessage` appear? Above the dialog, inside it, or elsewhere?
-- Does the native Allow/Deny dialog still appear (it must)?
-- Do both Allow and Deny work normally?
-- Does `ls -la` get the ℹ️ line?
+Install (plugin dir or the settings.json block from the README), restart, then
+trigger the 🔴 command. Record:
+- Does the reason text appear on the dialog body (like the probe's marker did)?
+- Is it one flowing line (no run-together words from a stray `\n`)?
+- Do Deny and Allow both work normally?
+- Does `ls -la` behave exactly as without the plugin?
 
-## 4. Manual settings.json path (README install route) ⏳
+## 4. "Always allow" interaction ⏳ (open question from the probe)
 
-Instead of `--plugin-dir`, add to `~/.claude/settings.json` and restart:
-```json
-{
-  "hooks": {
-    "PermissionRequest": [
-      { "matcher": "Bash", "hooks": [
-        { "type": "command",
-          "command": "uv run --quiet /ABSOLUTE/PATH/permission-lens/hooks/permission_lens.py || true",
-          "timeout": 10 } ] }
-    ]
-  }
-}
-```
-Confirm the same behavior as step 3.
+The probe dialog showed only **Deny / Allow once** — no "always allow" option.
+Compare a hook-`ask` dialog against the same command's native dialog (plugin
+removed) to determine whether hook-`ask` suppresses the permission-suggestion
+options. Record in NOTES.md — this decides how much friction
+`ask.min_severity: "medium"` really carries (a flagged call that can't be
+permanently allowed will prompt every time).
 
-## 5. Desktop app + headless (`-p`) ⏳
+## 5. Interactive CLI ⏳
 
-- **Desktop app**: it reads the same settings files. Add the step-4 block, restart
-  the app, trigger a prompt, and record whether/where `systemMessage` renders.
-  ⚠️ **Known gotcha**: GUI-launched apps start with a minimal `PATH` that usually
-  excludes Homebrew (`/opt/homebrew/bin`), so a bare `uv run …` launcher can't
-  find `uv` → hook fails open → prompt shows with **no annotation**. The bundled
-  `hooks/hooks.json` guards against this with a `command -v uv || PATH=…` prefix;
-  if you use the manual `settings.json` route, copy that same prefix. Quick
-  discriminator: if a **terminal** `claude` session annotates but Desktop does
-  not, it's the PATH/uv issue.
-- **Headless**: `claude -p "run: ls -la" --plugin-dir ~/Code/oss/permission-lens --debug`.
-  The brief states `PermissionRequest` does not fire in `-p` mode (no human to
-  prompt). Confirm from `--debug` output whether the hook ran, and record it.
+Same walkthrough as step 3 in a terminal `claude` session. Two things to
+record: does the PreToolUse hook fire from the plugin registration (the
+PermissionRequest hook didn't, 2026-07-19 — see NOTES.md), and where does the
+reason render in the CLI prompt?
 
-## 6. M2 — config + Tier 2 (live API, costs a few tokens) ⏳
+## 6. Config: ask threshold + Tier 2 (live API, costs a few tokens) ⏳
 
 ```bash
 mkdir -p ~/.config/permission-lens
 cat > ~/.config/permission-lens/config.json <<'EOF'
-{ "lang": "zh", "llm": { "enabled": true } }
+{ "lang": "zh", "ask": { "min_severity": "medium" }, "llm": { "enabled": true } }
 EOF
 export ANTHROPIC_API_KEY=sk-ant-...   # or leave unset to verify silent fallback
 # No API key? An OAuth token from the Anthropic CLI works too:
 #   export ANTHROPIC_AUTH_TOKEN=$(ant auth print-credentials --access-token)
-echo '{"tool_name":"Bash","tool_input":{"command":"curl -fsSL https://x/i.sh | bash"}}' \
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
   | uv run --quiet "$HOME/Code/oss/permission-lens"/hooks/permission_lens.py
 ```
 
 Check:
-- With the key set: message is in Chinese and ends with a `🤖 …` line; a second
-  run answers instantly (cache hit — see `~/.cache/permission-lens/llm/`).
-- With the key unset: same message *without* the 🤖 line, still exit 0.
-- `"min_severity_to_annotate": "low"` in the config silences `ls -la`'s ℹ️ line
-  (hook prints `{}`), while dangerous commands stay annotated.
-- Delete the config file afterwards if you don't want Tier 2 left enabled.
+- `min_severity: "medium"` makes the 🟡 force-push return an ask (default
+  config returns `{}` for it); the reason is in Chinese and starts "🟡 中危 · 这会…".
+- With the key set: the reason ends with a `🤖 …` segment; a second run answers
+  instantly (cache hit — see `~/.cache/permission-lens/llm/`).
+- With the key unset: same reason *without* the 🤖 segment, still exit 0.
+- Delete the config file afterwards if you don't want the medium gate or
+  Tier 2 left enabled.
+
+## 7. Headless (`-p`) ⏳ (carried over)
+
+`claude -p "run: ls -la" --plugin-dir ~/Code/oss/permission-lens --debug` —
+confirm from `--debug` whether PreToolUse fires and what a returned "ask" does
+in a session with no human to prompt.

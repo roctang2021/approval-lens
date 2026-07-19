@@ -149,10 +149,11 @@ def test_build_message_write_sensitive():
     assert msg.startswith("🔴 HIGH · ")
 
 
-def test_build_message_edit_neutral_for_normal_file():
-    msg = pl.build_message(
-        _event("Edit", file_path="/Users/x/proj/app.py", old_string="a", new_string="b"), _cfg())
-    assert msg == "ℹ️ Edits app.py"
+def test_build_message_edit_silent_for_normal_file():
+    # An ordinary file edit matches no rules -> the plugin stays out of the way.
+    assert pl.build_message(
+        _event("Edit", file_path="/Users/x/proj/app.py", old_string="a", new_string="b"),
+        _cfg()) is None
 
 
 def test_unhandled_tool_returns_none():
@@ -168,13 +169,14 @@ def test_missing_fields_stay_silent():
 
 # ── output contract for the new tools (subprocess) ────────────────────────────
 
-@pytest.mark.parametrize("event", [
-    _event("WebFetch", url="https://user:pass@h/x", prompt="read it"),
-    _event("Write", file_path="/etc/sudoers", content="x ALL=(ALL) NOPASSWD:ALL"),
-    _event("Edit", file_path="/Users/x/.zshrc", old_string="a", new_string="b", replace_all=False),
-    _event("Read", file_path="/x"),  # unhandled -> {}
-])
-def test_subprocess_contract_new_tools(event, tmp_path):
+@pytest.mark.parametrize("event,expects_ask", [
+    (_event("WebFetch", url="https://user:pass@h/x", prompt="read it"), True),   # high match
+    (_event("Write", file_path="/etc/sudoers", content="x ALL=(ALL) NOPASSWD:ALL"), True),  # high
+    (_event("Edit", file_path="/Users/x/.zshrc", old_string="a", new_string="b",
+            replace_all=False), False),  # medium match -> silent at default "high" gate
+    (_event("Read", file_path="/x"), False),  # unhandled -> {}
+], ids=["webfetch-userinfo", "write-sudoers", "edit-zshrc", "read-unhandled"])
+def test_subprocess_contract_new_tools(event, expects_ask, tmp_path):
     import os
     env = dict(os.environ)
     env["PERMISSION_LENS_CONFIG"] = "/nonexistent/pl.json"
@@ -184,7 +186,13 @@ def test_subprocess_contract_new_tools(event, tmp_path):
     assert proc.returncode == 0, proc.stderr
     parsed = json.loads(proc.stdout.decode().strip())
     assert isinstance(parsed, dict)
-    assert "hookSpecificOutput" not in parsed and "decision" not in parsed
+    assert "decision" not in parsed and "systemMessage" not in parsed
+    if expects_ask:
+        out = parsed["hookSpecificOutput"]
+        assert out["permissionDecision"] == "ask"
+        assert "\n" not in out["permissionDecisionReason"]
+    else:
+        assert parsed == {}
 
 
 # ── Tier 2 privacy: file content only sent when opted in ──────────────────────

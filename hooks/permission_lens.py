@@ -6,17 +6,25 @@
 """Permission Lens — static analyzer + optional LLM explainer for Claude Code
 permission dialogs.
 
-Entry point for the `PermissionRequest` hook. Reads the pending permission
-request from stdin, produces a plain-language explanation + risk assessment, and
-prints it as `{"systemMessage": "..."}` on stdout. It NEVER returns a decision
-field, so the native permission dialog always shows — augmenting the human's
-judgment, not replacing it.
+Entry point for the `PreToolUse` hook. Reads the pending tool call from stdin;
+when Tier 1 finds a risk at/above the configured `ask.min_severity` (default:
+high), it prints a `permissionDecision: "ask"` with a one-line plain-language
+explanation as the `permissionDecisionReason` — which Claude Code renders ON
+the permission dialog (verified 2026-07-19, see NOTES.md § PreToolUse probe).
+For everything below the threshold it prints `{}` and stays invisible: the
+allowlist, permission rules, and native dialog behave exactly as if the plugin
+were not installed.
+
+It NEVER returns "allow" or "deny". "ask" only guarantees the native dialog
+appears (it "floors the decision at a prompt" — CHANGELOG 2.1.211); the human
+always decides. That is the never-gatekeeper core: the plugin can add a prompt
+for a risky call, but can never approve or block anything.
 
 Two tiers:
   * Tier 1 (always on): offline rule engine over `rules.yaml`. Stdlib + PyYAML.
   * Tier 2 (opt-in via config, default OFF): one Anthropic Messages API call
     that adds a model-written one-liner. Hard wall-clock deadline; any failure
-    silently degrades to the Tier 1 message. The request body contains ONLY a
+    silently degrades to the Tier 1 reason. The request body contains ONLY a
     static system prompt and the command string — never cwd, session id, or
     transcript contents.
 
@@ -27,9 +35,11 @@ never break the hook. Env overrides `PERMISSION_LENS_CONFIG` and
 
 Correctness invariants (see NOTES.md for the doc sections these come from):
   * Exactly one JSON object is printed to stdout, on every code path.
-  * The script exits 0 on every code path. On `PermissionRequest`, exit 2 would
-    DENY the permission, so any failure fails OPEN: print `{}` and exit 0.
-  * No `hookSpecificOutput` / `decision` is ever emitted.
+  * The script exits 0 on every code path. On `PreToolUse`, exit 2 would BLOCK
+    the tool call, so any failure fails OPEN: print `{}` and exit 0.
+  * `permissionDecision` is only ever "ask" — never "allow", never "deny".
+  * The reason is a single line: the dialog collapses `\\n` (probe-verified),
+    so multi-line text would render as run-together words.
 
 This project studied dyad-sh/dyad `.claude/hooks/` (Apache-2.0) for stdin
 handling and shell-metacharacter patterns; no code was copied or adapted.
@@ -68,7 +78,15 @@ DEFAULT_CACHE_DIR = "~/.cache/permission-lens"
 
 DEFAULT_CONFIG = {
     "lang": "en",                        # "en" | "zh"
-    "min_severity_to_annotate": "info",  # "info" | "low" | "medium" | "high"
+    # The ask gate: a rule match at/above this severity returns
+    # permissionDecision "ask" + the explanation as the reason; anything below
+    # prints {} (fully invisible — allowlists and native behavior untouched).
+    # "high" is the default because 🔴 commands are almost never allowlisted,
+    # so forcing a prompt there costs ~nothing; set "medium" to put 🟡 (e.g.
+    # force-push) on the dialog too, accepting prompts for calls your rules
+    # would have auto-allowed. "info" is deliberately not accepted: it would
+    # prompt on every single tool call.
+    "ask": {"min_severity": "high"},     # "low" | "medium" | "high"
     "max_message_chars": MAX_MESSAGE_CHARS,
     "llm": {
         "enabled": False,                # Tier 2 is strictly opt-in
@@ -84,10 +102,9 @@ DEFAULT_CONFIG = {
         # file body. Must be literal true to enable.
         "send_file_content": False,
     },
-    # Desktop notification channel. Claude Code does not render a hook's
-    # systemMessage on the permission dialog (verified 2026-07-19, CLI + Desktop),
-    # so this is the pragmatic way to actually SEE the risk. Opt-in; fires a
-    # native macOS notification only for matches at/above min_severity.
+    # Desktop notification channel (opt-in). Independent of the ask gate: it
+    # fires for any flagged call at/above its own min_severity — including
+    # calls the permission rules auto-allow, where it's the only signal.
     "notify": {
         "enabled": False,
         "min_severity": "high",  # info | low | medium | high
@@ -96,6 +113,7 @@ DEFAULT_CONFIG = {
 
 _LANGS = ("en", "zh")
 _SEVERITY_THRESHOLDS = ("info", "low", "medium", "high")
+_ASK_THRESHOLDS = ("low", "medium", "high")  # no "info": would ask on everything
 # max_message_chars bounds: floor keeps at least a headline visible; ceiling stays
 # under the 10,000-char hook output cap (NOTES.md, "Confirmed facts" item 3).
 _MSG_CHARS_MIN, _MSG_CHARS_MAX = 80, 9000
@@ -123,8 +141,9 @@ def _validate_config(raw):
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
     if raw.get("lang") in _LANGS:
         cfg["lang"] = raw["lang"]
-    if raw.get("min_severity_to_annotate") in _SEVERITY_THRESHOLDS:
-        cfg["min_severity_to_annotate"] = raw["min_severity_to_annotate"]
+    ask_raw = raw.get("ask")
+    if isinstance(ask_raw, dict) and ask_raw.get("min_severity") in _ASK_THRESHOLDS:
+        cfg["ask"]["min_severity"] = ask_raw["min_severity"]
     cfg["max_message_chars"] = _clamped_number(
         raw.get("max_message_chars"), cfg["max_message_chars"],
         _MSG_CHARS_MIN, _MSG_CHARS_MAX, want_int=True)
@@ -168,10 +187,9 @@ SEVERITY_ORDER = {"high": 3, "medium": 2, "low": 1}
 SEVERITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
 SEVERITY_LABEL = {
     "en": {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"},
-    "zh": {"high": "高", "medium": "中", "low": "低"},
+    "zh": {"high": "高危", "medium": "中危", "low": "低危"},
 }
 INFO_EMOJI = "ℹ️"
-RISK_LABEL = {"en": "Risk", "zh": "风险"}
 
 
 # ── command parsing (conservative; not a full bash grammar) ───────────────────
@@ -542,54 +560,52 @@ def neutral_summary_path(file_path, label_map, lang=LANG):
     return f"{label_map[lang]} {base}"
 
 
-# ── message formatting ────────────────────────────────────────────────────────
+# ── reason formatting ─────────────────────────────────────────────────────────
+#
+# The reason renders on the permission dialog as ONE flowing line (the dialog
+# collapses \n — probe-verified 2026-07-19). Each part starts with an emoji, so
+# emojis double as visual separators: 🔴 headline · 🟡 extra risk · 🤖 model line.
 
 LLM_EMOJI = "🤖"
 
 
-def format_message(parsed, matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
-    """Bash-facing formatter (kept for existing callers/tests): derives the
-    neutral summary from the parsed command, then renders."""
-    return render_message(matches, neutral_summary(parsed, lang),
-                          lang=lang, max_chars=max_chars, llm_text=llm_text)
+def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
+    """Matched rules -> the single-line permissionDecisionReason.
 
-
-def render_message(matches, neutral, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
-    """Generic renderer: matched rules + a precomputed neutral summary string ->
-    the systemMessage text. Tool-agnostic (Bash/WebFetch/Write/Edit)."""
-    if not matches:
-        lines = [f"{INFO_EMOJI} {neutral}"]
-    else:
-        top = matches[0]
-        sev = top["severity"]
-        emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
-        label = SEVERITY_LABEL[lang].get(sev, sev.upper())
-        lines = [
-            f"{emoji} {label} · {top['explanation'][lang]}",
-            f"{RISK_LABEL[lang]}: {top['risk'][lang]}",
-        ]
-        # Up to two additional distinct risks (dedupe by category to avoid near-dupes).
-        seen = {top["category"]}
-        extras = 0
-        for rule in matches[1:]:
-            if rule["category"] in seen:
-                continue
-            seen.add(rule["category"])
-            e = SEVERITY_EMOJI.get(rule["severity"], INFO_EMOJI)
-            lines.append(f"{e} {rule['explanation'][lang]}")
-            extras += 1
-            if extras == 2:
-                break
-    # Tier 2 line goes last so truncation always prefers the deterministic
-    # Tier 1 content over the model-written extra.
+    Requires at least one match (the ask gate guarantees it). The headline is
+    the top rule's `risk` sentence — written in the YAML as a self-contained
+    plain-language sentence: what the call does AND why it matters, no jargon.
+    """
+    top = matches[0]
+    sev = top["severity"]
+    emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
+    label = SEVERITY_LABEL[lang].get(sev, sev.upper())
+    parts = [f"{emoji} {label} · {top['risk'][lang]}"]
+    # Up to two additional distinct risks (dedupe by category to avoid near-dupes);
+    # extras use the short `explanation` phrase, not the full sentence.
+    seen = {top["category"]}
+    extras = 0
+    for rule in matches[1:]:
+        if rule["category"] in seen:
+            continue
+        seen.add(rule["category"])
+        e = SEVERITY_EMOJI.get(rule["severity"], INFO_EMOJI)
+        parts.append(f"{e} {rule['explanation'][lang]}")
+        extras += 1
+        if extras == 2:
+            break
+    # Tier 2 goes last so truncation always prefers the deterministic Tier 1
+    # content over the model-written extra.
     if llm_text:
-        lines.append(f"{LLM_EMOJI} {llm_text}")
-    return _truncate("\n".join(lines), max_chars)
+        parts.append(f"{LLM_EMOJI} {llm_text}")
+    return _truncate(" ".join(_one_line(p) for p in parts), max_chars)
 
 
 def passes_threshold(matches, min_severity):
-    """min_severity_to_annotate filter: 'info' annotates everything (incl. the
-    neutral summary); higher values require a rule match at/above that level."""
+    """Severity gate shared by ask.min_severity and notify.min_severity:
+    'info' passes everything (incl. no-match calls); higher values require a
+    rule match at/above that level. ask never accepts 'info', so the ask gate
+    can only fire on an actual match."""
     threshold = SEVERITY_ORDER.get(min_severity, 0)  # "info" and unknown -> 0
     if not matches:
         return threshold <= 0
@@ -627,13 +643,14 @@ LLM_SYSTEM_PROMPTS = {
         "en": (
             "You explain shell commands shown in a permission dialog. The user "
             "message is exactly one shell command. Reply with 1-2 short plain-text "
-            "sentences in English: what the command does and any notable risk. "
-            "No markdown, no preamble, no code blocks."
+            "sentences in English a non-expert can follow: what the command does "
+            "and any notable risk. Plain words over jargon. No markdown, no "
+            "preamble, no code blocks."
         ),
         "zh": (
             "你负责解释权限弹框里出现的 shell 命令。用户消息就是一条 shell 命令本身。"
-            "用 1-2 句简短的中文纯文本回答:这条命令做什么、有什么值得注意的风险。"
-            "不要用 Markdown,不要客套开场白,不要代码块。"
+            "用 1-2 句简短的中文大白话回答:这条命令做什么、有什么值得注意的风险。"
+            "让不懂命令行的人也能看懂,少用术语。不要用 Markdown,不要客套开场白,不要代码块。"
         ),
     },
     "url": {
@@ -828,10 +845,10 @@ def _cache_store(path, text):
 
 # ── desktop notification channel ──────────────────────────────────────────────
 #
-# Claude Code does not render a hook's `systemMessage` on the permission dialog
-# (verified 2026-07-19 on CLI + Desktop), so the annotation can't be seen inline.
-# When opted in, we additionally fire a native macOS notification for risky
-# prompts. This is a best-effort SIDE EFFECT: it never touches stdout and any
+# Opt-in second channel alongside the on-dialog reason. On PreToolUse it fires
+# BEFORE permission evaluation, so it also covers flagged calls the rules
+# auto-allow (no dialog ever appears for those — the notification is the only
+# signal). This is a best-effort SIDE EFFECT: it never touches stdout and any
 # failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
 
 
@@ -840,10 +857,9 @@ def maybe_notify(tool, matches, neutral, config, lang):
         n = config.get("notify")
         if not isinstance(n, dict) or not n.get("enabled"):
             return
-        # Same threshold semantics as min_severity_to_annotate: "info" notifies
-        # on everything (incl. no-match neutral prompts); higher values require a
-        # rule match at/above that level. passes_threshold handles the no-match
-        # case (threshold <= 0).
+        # "info" notifies on everything (incl. no-match neutral calls); higher
+        # values require a rule match at/above that level. passes_threshold
+        # handles the no-match case (threshold <= 0).
         if not passes_threshold(matches, n.get("min_severity", "high")):
             return
         if matches:
@@ -956,26 +972,31 @@ TOOL_ANALYZERS = {
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def build_message(event, config=None):
-    """Pure core: event dict -> systemMessage string (or None to stay silent)."""
+    """Pure core: event dict -> the one-line ask reason, or None to print {}.
+
+    None means the plugin stays out of the way entirely: no decision field, no
+    forced prompt — allowlists and the native dialog behave as if it weren't
+    installed. A string means "ask" with that string as the on-dialog reason.
+    """
     config = config if config is not None else load_config()
     tool_name = event.get("tool_name")
     analyzer = TOOL_ANALYZERS.get(tool_name)
-    if analyzer is None:  # unannotated tool -> native dialog shows unchanged
+    if analyzer is None:  # uncovered tool -> never interfere
         return None
     result = analyzer(event.get("tool_input") or {}, config, config["lang"])
     if result is None:
         return None
     matches, neutral, subject, kind, notify_subject = result
     notify({"subject": notify_subject, "matches": [m["id"] for m in matches]})
-    if not passes_threshold(matches, config["min_severity_to_annotate"]):
-        return None
-    # Desktop notification (opt-in) — the only channel that's actually visible
-    # today, since systemMessage isn't rendered on the dialog.
+    # Notification channel is independent of the ask gate (its own threshold),
+    # so it runs first — it can flag calls that will auto-run without a dialog.
     maybe_notify(tool_name, matches, neutral, config, config["lang"])
-    # Tier 2 runs only for prompts we're actually going to annotate.
+    if not passes_threshold(matches, config["ask"]["min_severity"]):
+        return None
+    # Tier 2 runs only for calls we're actually going to put on a dialog.
     llm_text = tier2_explanation(subject, config, kind)
-    return render_message(
-        matches, neutral,
+    return render_reason(
+        matches,
         lang=config["lang"],
         max_chars=config["max_message_chars"],
         llm_text=llm_text,
@@ -986,14 +1007,22 @@ def main():
     try:
         raw = sys.stdin.read()
         event = json.loads(raw) if raw.strip() else {}
-        message = build_message(event, load_config())
-        if message is None:
-            # Nothing to say — fall through to the native dialog with no annotation.
+        reason = build_message(event, load_config())
+        if reason is None:
+            # Nothing to say — native permission behavior, untouched.
             print("{}")
         else:
-            print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+            # "ask" floors the decision at a prompt and puts the reason on the
+            # dialog. NEVER "allow"/"deny" — the human always decides.
+            print(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": reason,
+                }
+            }, ensure_ascii=False))
     except Exception:
-        # Fail open: never block or break the session. Exit 2 would DENY here.
+        # Fail open: never block or break the session. Exit 2 would BLOCK here.
         if os.environ.get("PERMISSION_LENS_DEBUG"):
             _log_debug(traceback.format_exc())
         print("{}")
