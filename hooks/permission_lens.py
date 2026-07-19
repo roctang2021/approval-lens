@@ -3,13 +3,27 @@
 # requires-python = ">=3.9"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Permission Lens — Tier 1 static analyzer for Claude Code permission dialogs.
+"""Permission Lens — static analyzer + optional LLM explainer for Claude Code
+permission dialogs.
 
 Entry point for the `PermissionRequest` hook. Reads the pending permission
 request from stdin, produces a plain-language explanation + risk assessment, and
 prints it as `{"systemMessage": "..."}` on stdout. It NEVER returns a decision
 field, so the native permission dialog always shows — augmenting the human's
 judgment, not replacing it.
+
+Two tiers:
+  * Tier 1 (always on): offline rule engine over `rules.yaml`. Stdlib + PyYAML.
+  * Tier 2 (opt-in via config, default OFF): one Anthropic Messages API call
+    that adds a model-written one-liner. Hard wall-clock deadline; any failure
+    silently degrades to the Tier 1 message. The request body contains ONLY a
+    static system prompt and the command string — never cwd, session id, or
+    transcript contents.
+
+Config: `~/.config/permission-lens/config.json` (see DEFAULT_CONFIG below).
+Unknown/invalid values fall back per-key to the defaults — a broken config can
+never break the hook. Env overrides `PERMISSION_LENS_CONFIG` and
+`PERMISSION_LENS_CACHE_DIR` exist for tests and debugging.
 
 Correctness invariants (see NOTES.md for the doc sections these come from):
   * Exactly one JSON object is printed to stdout, on every code path.
@@ -20,11 +34,15 @@ Correctness invariants (see NOTES.md for the doc sections these come from):
 This project studied dyad-sh/dyad `.claude/hooks/` (Apache-2.0) for stdin
 handling and shell-metacharacter patterns; no code was copied or adapted.
 """
+import hashlib
 import json
+import math
 import os
 import re
 import shlex
 import sys
+import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -34,10 +52,91 @@ except Exception:  # pragma: no cover - exercised only when pyyaml is missing
     yaml = None
 
 # Tier 1 budget target: analysis must stay well under 50ms. See tests/test_performance.py.
-MAX_MESSAGE_CHARS = 500  # M1: hardcoded. Becomes config in M2 (see plan / brief).
-LANG = "en"              # M1: hardcoded. `config.json` "lang": "zh"|"en" lands in M2.
+MAX_MESSAGE_CHARS = 500  # default; overridable via config "max_message_chars"
+LANG = "en"              # default; overridable via config "lang"
 
 RULES_PATH = Path(__file__).with_name("rules.yaml")
+
+# ── configuration ─────────────────────────────────────────────────────────────
+
+CONFIG_PATH_ENV = "PERMISSION_LENS_CONFIG"      # test/debug override for the config path
+DEFAULT_CONFIG_PATH = "~/.config/permission-lens/config.json"
+CACHE_DIR_ENV = "PERMISSION_LENS_CACHE_DIR"     # test/debug override for the cache dir
+DEFAULT_CACHE_DIR = "~/.cache/permission-lens"
+
+DEFAULT_CONFIG = {
+    "lang": "en",                        # "en" | "zh"
+    "min_severity_to_annotate": "info",  # "info" | "low" | "medium" | "high"
+    "max_message_chars": MAX_MESSAGE_CHARS,
+    "llm": {
+        "enabled": False,                # Tier 2 is strictly opt-in
+        "model": "claude-haiku-4-5",
+        "timeout_seconds": 3.0,          # hard wall-clock deadline for the API call
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "cache_ttl_days": 7,             # 0 disables the response cache
+    },
+}
+
+_LANGS = ("en", "zh")
+_SEVERITY_THRESHOLDS = ("info", "low", "medium", "high")
+# max_message_chars bounds: floor keeps at least a headline visible; ceiling stays
+# under the 10,000-char hook output cap (NOTES.md, "Confirmed facts" item 3).
+_MSG_CHARS_MIN, _MSG_CHARS_MAX = 80, 9000
+# timeout ceiling: the 10s hook timeout in hooks.json covers the WHOLE uv run
+# (uv resolve + interpreter start + rules load), so cap the API deadline low
+# enough to leave real headroom even on a cold uv cache.
+_TIMEOUT_MIN, _TIMEOUT_MAX = 0.1, 6.0
+
+
+def load_config():
+    """Read + validate the user config; any problem falls back per-key to defaults."""
+    path = os.environ.get(CONFIG_PATH_ENV) or os.path.expanduser(DEFAULT_CONFIG_PATH)
+    raw = {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            raw = loaded
+    except Exception:
+        pass  # missing/unreadable/malformed config -> pure defaults (fail open)
+    return _validate_config(raw)
+
+
+def _validate_config(raw):
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
+    if raw.get("lang") in _LANGS:
+        cfg["lang"] = raw["lang"]
+    if raw.get("min_severity_to_annotate") in _SEVERITY_THRESHOLDS:
+        cfg["min_severity_to_annotate"] = raw["min_severity_to_annotate"]
+    cfg["max_message_chars"] = _clamped_number(
+        raw.get("max_message_chars"), cfg["max_message_chars"],
+        _MSG_CHARS_MIN, _MSG_CHARS_MAX, want_int=True)
+    llm_raw = raw.get("llm")
+    if isinstance(llm_raw, dict):
+        llm = cfg["llm"]
+        llm["enabled"] = llm_raw.get("enabled") is True
+        if isinstance(llm_raw.get("model"), str) and llm_raw["model"].strip():
+            llm["model"] = llm_raw["model"].strip()
+        llm["timeout_seconds"] = _clamped_number(
+            llm_raw.get("timeout_seconds"), llm["timeout_seconds"],
+            _TIMEOUT_MIN, _TIMEOUT_MAX)
+        if isinstance(llm_raw.get("api_key_env"), str) and llm_raw["api_key_env"].strip():
+            llm["api_key_env"] = llm_raw["api_key_env"].strip()
+        llm["cache_ttl_days"] = _clamped_number(
+            llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
+    return cfg
+
+
+def _clamped_number(value, default, lo, hi, want_int=False):
+    # bool is an int subclass; a bare true/false is never a valid number here.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return default
+    # Python's json accepts NaN/Infinity literals; NaN would clamp to the MAX
+    # bound (nan comparisons are False), so treat non-finite as invalid.
+    if not math.isfinite(value):
+        return default
+    value = max(lo, min(hi, value))
+    return int(value) if want_int else float(value)
 
 SEVERITY_ORDER = {"high": 3, "medium": 2, "low": 1}
 SEVERITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
@@ -305,76 +404,282 @@ def _rule_matches(rule, parsed):
 
 # Verb phrasing for common commands, so a no-risk-match dialog still gets a line.
 _VERB_PHRASES = {
-    "ls": "Lists directory contents",
-    "cat": "Prints file contents",
-    "cd": "Changes the working directory",
-    "cp": "Copies files",
-    "mv": "Moves or renames files",
-    "mkdir": "Creates a directory",
-    "touch": "Creates or updates a file timestamp",
-    "echo": "Prints text",
-    "grep": "Searches text",
-    "rg": "Searches text (ripgrep)",
-    "find": "Searches the filesystem",
-    "sed": "Edits a text stream",
-    "awk": "Processes text",
-    "python": "Runs a Python program",
-    "python3": "Runs a Python program",
-    "node": "Runs a Node.js program",
-    "make": "Runs a make target",
-    "brew": "Runs a Homebrew command",
-    "docker": "Runs a Docker command",
-    "kubectl": "Runs a kubectl command",
+    "en": {
+        "ls": "Lists directory contents",
+        "cat": "Prints file contents",
+        "cd": "Changes the working directory",
+        "cp": "Copies files",
+        "mv": "Moves or renames files",
+        "mkdir": "Creates a directory",
+        "touch": "Creates or updates a file timestamp",
+        "echo": "Prints text",
+        "grep": "Searches text",
+        "rg": "Searches text (ripgrep)",
+        "find": "Searches the filesystem",
+        "sed": "Edits a text stream",
+        "awk": "Processes text",
+        "python": "Runs a Python program",
+        "python3": "Runs a Python program",
+        "node": "Runs a Node.js program",
+        "make": "Runs a make target",
+        "brew": "Runs a Homebrew command",
+        "docker": "Runs a Docker command",
+        "kubectl": "Runs a kubectl command",
+    },
+    "zh": {
+        "ls": "列出目录内容",
+        "cat": "输出文件内容",
+        "cd": "切换工作目录",
+        "cp": "复制文件",
+        "mv": "移动或重命名文件",
+        "mkdir": "创建目录",
+        "touch": "创建文件或更新时间戳",
+        "echo": "输出文本",
+        "grep": "搜索文本",
+        "rg": "搜索文本(ripgrep)",
+        "find": "搜索文件系统",
+        "sed": "编辑文本流",
+        "awk": "处理文本",
+        "python": "运行 Python 程序",
+        "python3": "运行 Python 程序",
+        "node": "运行 Node.js 程序",
+        "make": "运行 make 目标",
+        "brew": "运行 Homebrew 命令",
+        "docker": "运行 Docker 命令",
+        "kubectl": "运行 kubectl 命令",
+    },
 }
+_FALLBACK_SUMMARY = {"en": "Runs a shell command", "zh": "运行一条 shell 命令"}
+_RUNS_LABEL = {"en": "Runs", "zh": "运行"}
 _SUBCOMMAND_TOOLS = {"git", "npm", "pnpm", "yarn", "docker", "kubectl", "cargo", "go", "pip", "pip3", "brew", "gh"}
 
 
-def neutral_summary(parsed):
+def neutral_summary(parsed, lang=LANG):
+    lang = lang if lang in _LANGS else "en"
     sc = parsed.simple_commands[0] if parsed.simple_commands else None
     if not sc or not sc.name:
-        return "Runs a shell command"
+        return _FALLBACK_SUMMARY[lang]
     name = sc.name
     _, args = sc.flags_and_args()
     if name in _SUBCOMMAND_TOOLS and args:
-        return f"Runs: {name} {args[0]}"
-    if name in _VERB_PHRASES:
-        return _VERB_PHRASES[name]
-    return f"Runs `{name}`"
+        return f"{_RUNS_LABEL[lang]}: {name} {args[0]}"
+    if name in _VERB_PHRASES[lang]:
+        return _VERB_PHRASES[lang][name]
+    return f"{_RUNS_LABEL[lang]} `{name}`"
 
 
 # ── message formatting ────────────────────────────────────────────────────────
 
-def format_message(parsed, matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS):
-    if not matches:
-        return _truncate(f"{INFO_EMOJI} {neutral_summary(parsed)}", max_chars)
+LLM_EMOJI = "🤖"
 
-    top = matches[0]
-    sev = top["severity"]
-    emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
-    label = SEVERITY_LABEL[lang].get(sev, sev.upper())
-    lines = [
-        f"{emoji} {label} · {top['explanation'][lang]}",
-        f"{RISK_LABEL[lang]}: {top['risk'][lang]}",
-    ]
-    # Up to two additional distinct risks (dedupe by category to avoid near-dupes).
-    seen = {top["category"]}
-    extras = 0
-    for rule in matches[1:]:
-        if rule["category"] in seen:
-            continue
-        seen.add(rule["category"])
-        e = SEVERITY_EMOJI.get(rule["severity"], INFO_EMOJI)
-        lines.append(f"{e} {rule['explanation'][lang]}")
-        extras += 1
-        if extras == 2:
-            break
+
+def format_message(parsed, matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
+    if not matches:
+        lines = [f"{INFO_EMOJI} {neutral_summary(parsed, lang)}"]
+    else:
+        top = matches[0]
+        sev = top["severity"]
+        emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
+        label = SEVERITY_LABEL[lang].get(sev, sev.upper())
+        lines = [
+            f"{emoji} {label} · {top['explanation'][lang]}",
+            f"{RISK_LABEL[lang]}: {top['risk'][lang]}",
+        ]
+        # Up to two additional distinct risks (dedupe by category to avoid near-dupes).
+        seen = {top["category"]}
+        extras = 0
+        for rule in matches[1:]:
+            if rule["category"] in seen:
+                continue
+            seen.add(rule["category"])
+            e = SEVERITY_EMOJI.get(rule["severity"], INFO_EMOJI)
+            lines.append(f"{e} {rule['explanation'][lang]}")
+            extras += 1
+            if extras == 2:
+                break
+    # Tier 2 line goes last so truncation always prefers the deterministic
+    # Tier 1 content over the model-written extra.
+    if llm_text:
+        lines.append(f"{LLM_EMOJI} {llm_text}")
     return _truncate("\n".join(lines), max_chars)
+
+
+def passes_threshold(matches, min_severity):
+    """min_severity_to_annotate filter: 'info' annotates everything (incl. the
+    neutral summary); higher values require a rule match at/above that level."""
+    threshold = SEVERITY_ORDER.get(min_severity, 0)  # "info" and unknown -> 0
+    if not matches:
+        return threshold <= 0
+    return SEVERITY_ORDER.get(matches[0]["severity"], 0) >= threshold
 
 
 def _truncate(text, max_chars):
     if len(text) <= max_chars:
         return text
     return text[:max_chars - 1].rstrip() + "…"
+
+
+# ── Tier 2: optional LLM explainer (default OFF) ──────────────────────────────
+#
+# One Anthropic Messages API call per (model, lang, command), cached on disk.
+# Every failure path — disabled, no key, network error, non-2xx, timeout,
+# unparseable response — returns None and the caller degrades to Tier 1 alone.
+# Raw HTTP via urllib (stdlib) by design: no SDK dependency in a hook script.
+
+# Endpoint + headers per the Messages API reference (verified 2026-07-19):
+# POST https://api.anthropic.com/v1/messages with x-api-key + anthropic-version.
+LLM_API_URL = "https://api.anthropic.com/v1/messages"
+LLM_API_VERSION = "2023-06-01"
+LLM_MAX_TOKENS = 300
+# Dialogs show short commands; skip Tier 2 for pathological inputs.
+LLM_MAX_COMMAND_CHARS = 4000
+
+LLM_SYSTEM_PROMPT = {
+    "en": (
+        "You explain shell commands shown in a permission dialog. The user "
+        "message is exactly one shell command. Reply with 1-2 short plain-text "
+        "sentences in English: what the command does and any notable risk. "
+        "No markdown, no preamble, no code blocks."
+    ),
+    "zh": (
+        "你负责解释权限弹框里出现的 shell 命令。用户消息就是一条 shell 命令本身。"
+        "用 1-2 句简短的中文纯文本回答:这条命令做什么、有什么值得注意的风险。"
+        "不要用 Markdown,不要客套开场白,不要代码块。"
+    ),
+}
+
+
+def tier2_explanation(command, config):
+    """Return a one-line model-written explanation, or None (silent fallback)."""
+    llm = config.get("llm")
+    if not isinstance(llm, dict) or not llm.get("enabled"):
+        return None  # gate is pre-try, so it must tolerate unvalidated configs
+    try:
+        if len(command) > LLM_MAX_COMMAND_CHARS:
+            return None
+        model, lang = llm["model"], config.get("lang", "en")
+        ttl_days = llm["cache_ttl_days"]
+        cache_path = _llm_cache_path(command, model, lang)
+        cached = _cache_lookup(cache_path, ttl_days)
+        if cached is not None:
+            return _one_line(cached) or None
+        api_key = os.environ.get(llm.get("api_key_env") or "", "").strip()
+        if not api_key:
+            return None
+        timeout = llm["timeout_seconds"]
+        text = _run_with_deadline(
+            lambda: _post_messages_api(command, model, lang, api_key, timeout),
+            timeout,
+        )
+        text = _one_line(text or "")
+        if not text:
+            return None
+        if ttl_days > 0:  # ttl 0 disables the cache entirely — reads AND writes
+            _cache_store(cache_path, text)
+        return text
+    except Exception:
+        if os.environ.get("PERMISSION_LENS_DEBUG"):
+            _log_debug("tier2: " + traceback.format_exc())
+        return None
+
+
+def _one_line(text):
+    """Collapse whitespace/newlines so the dialog gets a single tidy line."""
+    return " ".join(text.split())
+
+
+def _post_messages_api(command, model, lang, api_key, timeout):
+    # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
+    import urllib.request
+
+    # PRIVACY INVARIANT: the request body is a static system prompt plus the
+    # command string, nothing else. No cwd, session_id, or transcript content.
+    body = json.dumps({
+        "model": model,
+        "max_tokens": LLM_MAX_TOKENS,
+        "system": LLM_SYSTEM_PROMPT.get(lang, LLM_SYSTEM_PROMPT["en"]),
+        "messages": [{"role": "user", "content": command}],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        LLM_API_URL,
+        data=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": LLM_API_VERSION,
+        },
+        method="POST",
+    )
+    # Socket-level timeout; the wall-clock cap is enforced by _run_with_deadline.
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    for block in data.get("content", []):
+        if block.get("type") == "text" and str(block.get("text", "")).strip():
+            return str(block["text"]).strip()
+    return None
+
+
+def _run_with_deadline(fn, seconds):
+    """Run fn in a worker thread with a hard wall-clock cap.
+
+    urllib's timeout is per socket operation, so a slow-trickle response could
+    exceed it in total. The daemon worker gives a true deadline: on expiry we
+    abandon the thread (the socket timeout reaps it) and fall back to Tier 1.
+    """
+    box = {}
+
+    def worker():
+        try:
+            box["value"] = fn()
+        except Exception:
+            if os.environ.get("PERMISSION_LENS_DEBUG"):
+                _log_debug("tier2 fetch: " + traceback.format_exc())
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(seconds)
+    return box.get("value")
+
+
+def _cache_dir():
+    return Path(os.path.expanduser(os.environ.get(CACHE_DIR_ENV) or DEFAULT_CACHE_DIR))
+
+
+def _llm_cache_path(command, model, lang):
+    digest = hashlib.sha256(f"{model}\n{lang}\n{command}".encode("utf-8")).hexdigest()
+    return _cache_dir() / "llm" / f"{digest}.json"
+
+
+def _cache_lookup(path, ttl_days):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            entry = json.load(fh)
+        text, created = entry.get("text"), entry.get("created")
+        if not isinstance(text, str) or isinstance(created, bool) \
+                or not isinstance(created, (int, float)):
+            return None
+        if time.time() - created > ttl_days * 86400:
+            return None
+        return text
+    except Exception:
+        return None  # missing or corrupt cache entry -> treat as a miss
+
+
+def _cache_store(path, text):
+    tmp = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"text": text, "created": time.time()}, fh, ensure_ascii=False)
+        os.replace(tmp, path)  # atomic on POSIX; concurrent hooks can't corrupt
+    except Exception:
+        # cache is best-effort only; don't leave a half-written tmp behind
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
 
 
 # ── M4 extension point (no-op in M1–M3) ───────────────────────────────────────
@@ -390,8 +695,9 @@ def notify(payload):
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
-def build_message(event):
+def build_message(event, config=None):
     """Pure core: event dict -> systemMessage string (or None to stay silent)."""
+    config = config if config is not None else load_config()
     # PermissionRequest input schema — see NOTES.md ("Confirmed facts", item 1):
     # tool_name + tool_input{command,...}. Matcher is Bash, but guard anyway.
     if event.get("tool_name") != "Bash":
@@ -402,14 +708,23 @@ def build_message(event):
     parsed = Parsed(command)
     matches = analyze(parsed)
     notify({"command": command, "matches": [m["id"] for m in matches]})
-    return format_message(parsed, matches)
+    if not passes_threshold(matches, config["min_severity_to_annotate"]):
+        return None
+    # Tier 2 runs only for commands we're actually going to annotate.
+    llm_text = tier2_explanation(command, config)
+    return format_message(
+        parsed, matches,
+        lang=config["lang"],
+        max_chars=config["max_message_chars"],
+        llm_text=llm_text,
+    )
 
 
 def main():
     try:
         raw = sys.stdin.read()
         event = json.loads(raw) if raw.strip() else {}
-        message = build_message(event)
+        message = build_message(event, load_config())
         if message is None:
             # Nothing to say — fall through to the native dialog with no annotation.
             print("{}")
@@ -425,7 +740,7 @@ def main():
 
 def _log_debug(text):
     try:
-        cache = Path(os.path.expanduser("~/.cache/permission-lens"))
+        cache = _cache_dir()  # honors PERMISSION_LENS_CACHE_DIR like all writes
         cache.mkdir(parents=True, exist_ok=True)
         with open(cache / "debug.log", "a", encoding="utf-8") as fh:
             fh.write(text + "\n")

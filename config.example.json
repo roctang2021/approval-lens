@@ -1,0 +1,12 @@
+{
+  "lang": "en",
+  "min_severity_to_annotate": "info",
+  "max_message_chars": 500,
+  "llm": {
+    "enabled": false,
+    "model": "claude-haiku-4-5",
+    "timeout_seconds": 3.0,
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "cache_ttl_days": 7
+  }
+}

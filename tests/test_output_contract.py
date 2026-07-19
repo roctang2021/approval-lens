@@ -2,8 +2,10 @@
 object to stdout and exits 0. Exit 2 on PermissionRequest would DENY, so the
 'always exit 0' guarantee is a hard correctness requirement, not a nicety."""
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -11,14 +13,27 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent.parent / "hooks" / "permission_lens.py"
 
 
-def _run(stdin_bytes):
+# One shared scratch cache dir for all subprocess runs; the TemporaryDirectory
+# finalizer removes it when the test process exits.
+_CACHE_TMP = tempfile.TemporaryDirectory(prefix="pl-test-cache-")
+
+
+def _run(stdin_bytes, env_overrides=None):
     # Run with the same interpreter pytest runs under (has pyyaml), not nested uv.
+    # Hermetic: hard-assign config/cache paths so neither the developer's real
+    # ~/.config nor ambient PERMISSION_LENS_* exports can leak in (a local
+    # config with llm.enabled plus a real API key would otherwise go live).
+    env = dict(os.environ)
+    env["PERMISSION_LENS_CONFIG"] = "/nonexistent/permission-lens-test.json"
+    env["PERMISSION_LENS_CACHE_DIR"] = _CACHE_TMP.name
+    env.update(env_overrides or {})
     proc = subprocess.run(
         [sys.executable, str(SCRIPT)],
         input=stdin_bytes,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         timeout=15,
+        env=env,
     )
     return proc
 
@@ -73,3 +88,32 @@ def test_message_within_10k_cap():
     proc = _run(CASES["huge_command"].encode("utf-8"))
     parsed = _assert_single_json_object(proc)
     assert len(parsed.get("systemMessage", "")) <= 10_000
+
+
+def test_llm_enabled_without_key_still_fails_open():
+    # Tier 2 opted in but the key env var is unset: the hook must degrade to the
+    # Tier 1 message — single JSON object, exit 0, no decision, no network hang.
+    with tempfile.TemporaryDirectory() as tmp:
+        config_path = Path(tmp) / "config.json"
+        config_path.write_text(json.dumps({
+            "llm": {"enabled": True, "api_key_env": "PERMISSION_LENS_NO_SUCH_KEY"},
+        }), encoding="utf-8")
+        proc = _run(
+            CASES["valid_bash"].encode("utf-8"),
+            env_overrides={"PERMISSION_LENS_CONFIG": str(config_path)},
+        )
+    parsed = _assert_single_json_object(proc)
+    assert "systemMessage" in parsed
+    assert "hookSpecificOutput" not in parsed
+
+
+def test_broken_config_file_still_fails_open():
+    with tempfile.TemporaryDirectory() as tmp:
+        config_path = Path(tmp) / "config.json"
+        config_path.write_text("{{{ definitely not json", encoding="utf-8")
+        proc = _run(
+            CASES["valid_bash"].encode("utf-8"),
+            env_overrides={"PERMISSION_LENS_CONFIG": str(config_path)},
+        )
+    parsed = _assert_single_json_object(proc)
+    assert "systemMessage" in parsed

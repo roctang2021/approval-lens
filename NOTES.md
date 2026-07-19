@@ -108,3 +108,63 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   a future `notify_url` config key will POST pending requests to a localhost panel.
   The docs' `http` hook type may be an alternative implementation path.
 
+## M2 (2026-07-19): config + Tier 2 LLM explainer
+
+### Config
+
+- Path: `~/.config/permission-lens/config.json`; schema mirrors
+  `config.example.json` in the repo root. Keys: `lang` (`en`|`zh`),
+  `min_severity_to_annotate` (`info`|`low`|`medium`|`high`), `max_message_chars`
+  (clamped 80–9000, under the 10k hook cap), `llm.*`.
+- **Per-key fail open**: a missing/malformed file, or any invalid value, falls
+  back to the default for that key only — a broken config can never break the
+  hook or (worse) accidentally enable Tier 2 (`enabled` must be literal `true`).
+- `min_severity_to_annotate` semantics: `info` (default) annotates everything
+  including the neutral ℹ️ summary; `low`+ requires a rule match at/above the
+  threshold, otherwise the hook stays silent (prints `{}`).
+- Env overrides for tests/debugging: `PERMISSION_LENS_CONFIG` (config path),
+  `PERMISSION_LENS_CACHE_DIR` (cache root). The contract tests set both so a
+  developer's real config can't leak into subprocess assertions.
+
+### Tier 2 LLM explainer (default OFF)
+
+- **Opt-in only**: `llm.enabled: true` + an API key in `$ANTHROPIC_API_KEY`
+  (env var name configurable via `llm.api_key_env`). Without both, the code
+  path returns before any network import/IO.
+- Raw HTTP via stdlib `urllib` (no SDK dependency): `POST
+  https://api.anthropic.com/v1/messages`, headers `x-api-key` +
+  `anthropic-version: 2023-06-01`, model `claude-haiku-4-5` (alias verified
+  against the current model catalog 2026-07-19). `urllib.request` is imported
+  lazily inside the fetch so Tier 1 startup cost is unchanged.
+- **Privacy invariant** (tested): the request body is exactly
+  `{model, max_tokens, system, messages}` where `system` is a static prompt and
+  `messages` is the command string alone. No cwd, session id, or transcript
+  content ever leaves the machine. Commands >4000 chars skip Tier 2 entirely.
+- **3s hard timeout**: `urllib`'s `timeout` is per socket operation, so the
+  fetch runs in a daemon thread with `join(timeout_seconds)` — a true wall-clock
+  cap (verified by test: a 1.5s-slow fake API is abandoned in <1s at a 0.2s
+  deadline). On expiry the thread is abandoned and Tier 1 output ships alone.
+- **Cache**: `~/.cache/permission-lens/llm/<sha256(model\nlang\ncommand)>.json`
+  holding `{"text", "created"}`; TTL `llm.cache_ttl_days` (default 7, `0`
+  disables caching). Writes are `os.replace`-atomic; corrupt/expired entries
+  are treated as misses. Cache is best-effort — failures never surface.
+- **Silent degradation everywhere**: disabled / no key / network error /
+  non-JSON response / empty text / timeout all return `None`; the dialog then
+  shows the pure Tier 1 message. Process-level contract tests cover
+  `llm.enabled` with no key and a syntactically broken config file.
+- Message layout: the model line is appended last with a 🤖 prefix, so
+  truncation at `max_message_chars` always keeps the deterministic Tier 1
+  content first.
+- `lang: "zh"` now also localizes the neutral ℹ️ summaries (M1 had rule
+  explanations bilingual but summaries EN-only) and the Tier 2 system prompt.
+- Suite: 158 tests (was 123); Tier 2 tests are fully offline via monkeypatched
+  `urllib.request.urlopen`. The no-network guards *record* calls and assert the
+  list stays empty — a raised exception alone would be swallowed by the
+  deadline worker and the tests would pass vacuously.
+- Independent pre-commit review (2026-07-19) found no invariant violations;
+  fixes applied from it: vacuous no-network tests (above), `cache_ttl_days: 0`
+  now disables writes as well as reads, NaN/Infinity config values fall back to
+  defaults instead of clamping to MAX, the Tier 2 opt-in gate tolerates
+  unvalidated configs, `_log_debug` honors `PERMISSION_LENS_CACHE_DIR`, and the
+  timeout ceiling dropped 8s→6s (the 10s hook timeout also covers uv/python
+  startup, not just the API call).
