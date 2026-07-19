@@ -70,6 +70,13 @@ Confirm the same behavior as step 3.
 
 - **Desktop app**: it reads the same settings files. Add the step-4 block, restart
   the app, trigger a prompt, and record whether/where `systemMessage` renders.
+  ⚠️ **Known gotcha**: GUI-launched apps start with a minimal `PATH` that usually
+  excludes Homebrew (`/opt/homebrew/bin`), so a bare `uv run …` launcher can't
+  find `uv` → hook fails open → prompt shows with **no annotation**. The bundled
+  `hooks/hooks.json` guards against this with a `command -v uv || PATH=…` prefix;
+  if you use the manual `settings.json` route, copy that same prefix. Quick
+  discriminator: if a **terminal** `claude` session annotates but Desktop does
+  not, it's the PATH/uv issue.
 - **Headless**: `claude -p "run: ls -la" --plugin-dir ~/Code/oss/permission-lens --debug`.
   The brief states `PermissionRequest` does not fire in `-p` mode (no human to
   prompt). Confirm from `--debug` output whether the hook ran, and record it.

@@ -77,7 +77,7 @@ Add to `~/.claude/settings.json` (use an absolute path) and restart Claude Code:
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet /ABSOLUTE/PATH/permission-lens/hooks/permission_lens.py || true",
+            "command": "sh -c 'command -v uv >/dev/null 2>&1 || PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; uv run --quiet /ABSOLUTE/PATH/permission-lens/hooks/permission_lens.py' || true",
             "timeout": 10
           }
         ]
@@ -87,9 +87,14 @@ Add to `~/.claude/settings.json` (use an absolute path) and restart Claude Code:
 }
 ```
 
-The `|| true` guard is load-bearing: it guarantees a broken launcher can never
-exit non-zero and accidentally **deny** a permission (exit 2 on
-`PermissionRequest` means deny).
+Two parts of that command are load-bearing:
+- The `|| true` guard guarantees a broken launcher can never exit non-zero and
+  accidentally **deny** a permission (exit 2 on `PermissionRequest` means deny).
+- The `command -v uv … || PATH=…` prefix finds `uv` even when it isn't on
+  `PATH`. GUI-launched apps (Claude Code **Desktop**) often start with a minimal
+  `PATH` that excludes Homebrew (`/opt/homebrew/bin`) — without this, the hook
+  silently fails open and you'd see prompts with **no annotation**. The plugin's
+  bundled hook already includes this prefix.
 
 ### Option C — plugin marketplace
 

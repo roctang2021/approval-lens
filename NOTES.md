@@ -243,3 +243,21 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   Tests assert the secret/prompt never appears in the request body by default.
 - Suite: 204 tests (was 160); +`tests/test_multitool.py`, fully offline, with
   per-rule coverage assertions (every web/path rule needs a positive case).
+
+### Desktop `uv`-not-on-PATH fix (2026-07-19)
+
+- **Symptom** (hit live): a **Bash** permission dialog in Claude Code Desktop
+  showed no annotation. Root cause proven, not guessed: macOS GUI apps launch
+  with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, which excludes Homebrew's
+  `/opt/homebrew/bin` where `uv` lives. `uv run … || true` then hits
+  `uv: command not found`, exits 0 (fail open), emits nothing → prompt shows
+  unannotated. Terminal `claude` (full shell PATH) was unaffected — the clean
+  discriminator.
+- **Fix**: the `hooks.json` command is now
+  `sh -c 'command -v uv >/dev/null 2>&1 || PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; uv run --quiet "${CLAUDE_PLUGIN_ROOT}"/hooks/permission_lens.py' || true`.
+  If `uv` is already on PATH (terminal) nothing changes; otherwise common install
+  dirs (uv-standalone `~/.local/bin`, cargo `~/.cargo/bin`, Homebrew AS/Intel)
+  are prepended before the run. Verified in three scenarios: GUI-minimal PATH now
+  annotates; `uv` genuinely absent still fails open (error to stderr, exit 0, no
+  stdout); normal terminal unchanged. README's manual `settings.json` block and
+  `scripts/manual-test.md` updated to carry the same prefix + document the gotcha.
