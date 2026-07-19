@@ -835,18 +835,25 @@ def _cache_store(path, text):
 # failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
 
 
-def maybe_notify(tool, matches, config, lang):
+def maybe_notify(tool, matches, neutral, config, lang):
     try:
         n = config.get("notify")
-        if not isinstance(n, dict) or not n.get("enabled") or not matches:
+        if not isinstance(n, dict) or not n.get("enabled"):
             return
+        # Same threshold semantics as min_severity_to_annotate: "info" notifies
+        # on everything (incl. no-match neutral prompts); higher values require a
+        # rule match at/above that level. passes_threshold handles the no-match
+        # case (threshold <= 0).
         if not passes_threshold(matches, n.get("min_severity", "high")):
             return
-        top = matches[0]
-        emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
-        label = SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
-            top["severity"], top["severity"].upper())
-        send_desktop_notification(f"{emoji} {tool} · {label}", top["explanation"][lang])
+        if matches:
+            top = matches[0]
+            emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
+            label = SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
+                top["severity"], top["severity"].upper())
+            send_desktop_notification(f"{emoji} {tool} · {label}", top["explanation"][lang])
+        else:  # only reached at min_severity "info" — benign/neutral prompt
+            send_desktop_notification(f"{INFO_EMOJI} {tool}", neutral)
     except Exception:
         if os.environ.get("PERMISSION_LENS_DEBUG"):
             _log_debug("notify: " + traceback.format_exc())
@@ -964,7 +971,7 @@ def build_message(event, config=None):
         return None
     # Desktop notification (opt-in) — the only channel that's actually visible
     # today, since systemMessage isn't rendered on the dialog.
-    maybe_notify(tool_name, matches, config, config["lang"])
+    maybe_notify(tool_name, matches, neutral, config, config["lang"])
     # Tier 2 runs only for prompts we're actually going to annotate.
     llm_text = tier2_explanation(subject, config, kind)
     return render_message(

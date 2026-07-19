@@ -55,10 +55,18 @@ def test_below_threshold_does_not_notify(sent):
     assert sent == []
 
 
-def test_benign_never_notifies(sent):
-    # ls has no rule match at all; even min_severity info skips (no matches).
-    pl.build_message(_event(command="ls -la"), _cfg(min_severity="info"))
+def test_benign_notifies_only_at_info(sent):
+    # ls has no rule match. At the default/high threshold it stays silent...
+    pl.build_message(_event(command="ls -la"), _cfg(min_severity="high"))
     assert sent == []
+    pl.build_message(_event(command="ls -la"), _cfg(min_severity="medium"))
+    assert sent == []
+    # ...but min_severity "info" notifies on everything, using the neutral summary.
+    pl.build_message(_event(command="ls -la"), _cfg(min_severity="info"))
+    assert len(sent) == 1
+    title, body = sent[0]
+    assert title.startswith("ℹ️") and "Bash" in title
+    assert body == "Lists directory contents"
 
 
 def test_medium_threshold_notifies_on_medium(sent):
