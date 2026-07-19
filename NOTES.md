@@ -175,3 +175,25 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   unvalidated configs, `_log_debug` honors `PERMISSION_LENS_CACHE_DIR`, and the
   timeout ceiling dropped 8s→6s (the 10s hook timeout also covers uv/python
   startup, not just the API call).
+
+## M3 (2026-07-19): packaging polish
+
+- **README** rewritten as a full bilingual (EN + 中文) doc: what/why, the
+  two-tier design table, three install routes, the config-key table, the
+  "Tier 2 uses your own account" credential section (API key + OAuth token),
+  a "testing it locally" section, and the design principles. Anchor-linked
+  language switcher at the top of each half.
+- **Marketplace**: repo is its own single-plugin marketplace at
+  `.claude-plugin/marketplace.json` (self-hosting pattern, `source: "./"`).
+  `--strict` requires a marketplace description, supplied under `metadata`.
+  Verified: `claude plugin validate . --strict` passes for BOTH the plugin
+  manifest and the marketplace manifest on v2.1.214. Marketplace install
+  (`/plugin marketplace add … && /plugin install permission-lens@permission-lens`)
+  only works once the repo is pushed to a git host — there is no remote yet,
+  so local dev uses `--plugin-dir` / the manual settings.json block.
+- **CI-able check script**: `scripts/check.sh` runs pytest, a real-`uv-run`
+  hook smoke test (asserts exit 0, a `systemMessage`, and NO decision field),
+  and `claude plugin validate . --strict` (skipped with a note if the CLI is
+  absent, so CI without `claude` still passes the rest). `set -euo pipefail`;
+  the smoke test captures via `if ! out=$(...)` so a non-zero hook exit is
+  reported rather than silently aborting under `set -e`.

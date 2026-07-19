@@ -1,0 +1,14 @@
+{
+  "name": "permission-lens",
+  "owner": { "name": "roctang2021" },
+  "metadata": {
+    "description": "Single-plugin marketplace for Permission Lens — plain-language explanations for Claude Code permission prompts."
+  },
+  "plugins": [
+    {
+      "name": "permission-lens",
+      "source": "./",
+      "description": "Explains pending permission prompts in plain language — annotates the dialog, never decides for you."
+    }
+  ]
+}
