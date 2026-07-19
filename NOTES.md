@@ -84,15 +84,36 @@ Verified in this environment:
   goes to stderr (shown as a hook-error notice) with empty stdout → no
   annotation, native dialog shows.
 
-Pending manual verification (needs an interactive TTY / the Desktop app / a live
-`-p` run — this autonomous environment can't drive those; see
-`scripts/manual-test.md` steps 3–5):
+**`systemMessage` rendering — VERIFIED 2026-07-19 (was pending since M1):**
 
-- **CLI rendering**: whether/where `systemMessage` renders relative to the
-  permission dialog in an interactive session.
-- **Desktop app rendering**: same, in the Desktop app (reads the same settings).
-- **`-p` (non-interactive) behavior**: the brief states `PermissionRequest` does
-  not fire in `-p` mode (no human to prompt); confirm via `--debug`.
+Driven live in Claude Code Desktop with an instrumented hook (a probe wrapper
+that logged stdin/stdout of every invocation). Findings:
+
+- **Desktop invokes the hook and receives the `systemMessage`, but does NOT
+  render it on the permission dialog.** Proof: a real Desktop `PermissionRequest`
+  event (full `session_id`/`cwd`/`permission_mode` payload) logged
+  `OUT: {"systemMessage": "ℹ️ Fetches claude.ai"}`, yet the dialog showed no
+  annotation. So the plugin is correct end-to-end; the app just doesn't surface
+  the field there.
+- **The API offers no dialog-text field short of a decision.** The PermissionRequest
+  output schema is `hookSpecificOutput.decision.behavior` (allow/deny) +
+  `updatedInput`, plus the common `systemMessage`. There is **no** documented
+  field to add explanatory text to the dialog *without* deciding — and deciding
+  violates the never-gatekeeper core, so it's off the table.
+- **CLI**: the standalone terminal `claude` (2.1.215) did **not** fire the plugin
+  hook across two fresh sessions in this environment (probe never logged a CLI
+  call), despite `claude plugin details` listing the PermissionRequest hook as
+  registered. Root cause undetermined remotely; noted, not blocking — even if it
+  fired, the Desktop rendering gap is the real blocker for that surface.
+
+**Consequence → M6**: the "annotate the dialog inline via systemMessage" premise
+(assumed since M1, never before verified interactively) does **not** hold on the
+surfaces tested. The plugin still emits `systemMessage` (lights up if a future
+version renders it), and M6 adds an opt-in macOS **notification** channel as the
+display that's actually visible today. See the M6 section below.
+
+Still pending (lower priority): `-p` non-interactive behavior (brief says
+`PermissionRequest` doesn't fire without a human) — confirm via `--debug`.
 
 ## Design decisions
 
@@ -261,3 +282,31 @@ Pending manual verification (needs an interactive TTY / the Desktop app / a live
   annotates; `uv` genuinely absent still fails open (error to stderr, exit 0, no
   stdout); normal terminal unchanged. README's manual `settings.json` block and
   `scripts/manual-test.md` updated to carry the same prefix + document the gotcha.
+
+## M6 (2026-07-19): desktop notification channel
+
+- **Why**: the `systemMessage`-not-rendered finding above means the inline
+  annotation is invisible on the surfaces tested. A notification is the pragmatic
+  channel that's actually visible today; the dialog stays native.
+- **Config** `notify.{enabled,min_severity}` — **opt-in** (`enabled` default
+  false, literal-true to enable, consistent with Tier 2), `min_severity` default
+  `high` so only genuinely dangerous prompts interrupt. Validated per-key like
+  the rest.
+- **Mechanism**: `send_desktop_notification(title, body)` runs `osascript -e
+  'display notification …'`; **macOS only** (`sys.platform == "darwin"`, else
+  no-op), `subprocess` imported lazily, 3s timeout, stdout/stderr to DEVNULL.
+  `_osa_escape` escapes `\` / `"` / newlines for the AppleScript string (title +
+  body are our own rule text — no user input, no command/URL/path in the
+  notification — so no injection surface).
+- **Invariants preserved**: `maybe_notify` is a best-effort SIDE EFFECT wrapped
+  in try/except; it fires only when enabled + there are matches + top severity ≥
+  threshold, and it runs *after* `passes_threshold`. It never touches stdout and
+  a failure never propagates — `systemMessage` is still emitted and exit stays 0
+  (tested: a notifier that raises leaves `build_message` returning the normal
+  message). The returned message is byte-identical whether notify is on or off.
+- Verified live on this Mac: real notifications fired for a HIGH Bash pipe-to-shell
+  and a credentials-in-URL WebFetch; `ls` (info) stayed silent under
+  `min_severity: high`; all three exit 0 and still return `systemMessage`.
+- Suite: 219 tests (was 204); +`tests/test_notify.py`, fully offline
+  (`send_desktop_notification` / `subprocess.run` monkeypatched, platform guard
+  tested both ways). Plugin version 0.4.0.

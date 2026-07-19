@@ -10,5 +10,9 @@
     "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
     "cache_ttl_days": 7,
     "send_file_content": false
+  },
+  "notify": {
+    "enabled": false,
+    "min_severity": "high"
   }
 }

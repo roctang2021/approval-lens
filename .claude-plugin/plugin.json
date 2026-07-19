@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "permission-lens",
   "displayName": "Permission Lens",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Explains pending permission prompts in plain language — annotates the dialog, never decides for you.",
   "author": { "name": "roctang2021" },
   "license": "MIT",

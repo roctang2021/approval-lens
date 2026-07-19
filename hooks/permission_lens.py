@@ -84,6 +84,14 @@ DEFAULT_CONFIG = {
         # file body. Must be literal true to enable.
         "send_file_content": False,
     },
+    # Desktop notification channel. Claude Code does not render a hook's
+    # systemMessage on the permission dialog (verified 2026-07-19, CLI + Desktop),
+    # so this is the pragmatic way to actually SEE the risk. Opt-in; fires a
+    # native macOS notification only for matches at/above min_severity.
+    "notify": {
+        "enabled": False,
+        "min_severity": "high",  # info | low | medium | high
+    },
 }
 
 _LANGS = ("en", "zh")
@@ -136,6 +144,12 @@ def _validate_config(raw):
         llm["cache_ttl_days"] = _clamped_number(
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
         llm["send_file_content"] = llm_raw.get("send_file_content") is True
+    notify_raw = raw.get("notify")
+    if isinstance(notify_raw, dict):
+        n = cfg["notify"]
+        n["enabled"] = notify_raw.get("enabled") is True
+        if notify_raw.get("min_severity") in _SEVERITY_THRESHOLDS:
+            n["min_severity"] = notify_raw["min_severity"]
     return cfg
 
 
@@ -812,7 +826,51 @@ def _cache_store(path, text):
                 pass
 
 
-# ── M4 extension point (no-op in M1–M3) ───────────────────────────────────────
+# ── desktop notification channel ──────────────────────────────────────────────
+#
+# Claude Code does not render a hook's `systemMessage` on the permission dialog
+# (verified 2026-07-19 on CLI + Desktop), so the annotation can't be seen inline.
+# When opted in, we additionally fire a native macOS notification for risky
+# prompts. This is a best-effort SIDE EFFECT: it never touches stdout and any
+# failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
+
+
+def maybe_notify(tool, matches, config, lang):
+    try:
+        n = config.get("notify")
+        if not isinstance(n, dict) or not n.get("enabled") or not matches:
+            return
+        if not passes_threshold(matches, n.get("min_severity", "high")):
+            return
+        top = matches[0]
+        emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
+        label = SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
+            top["severity"], top["severity"].upper())
+        send_desktop_notification(f"{emoji} {tool} · {label}", top["explanation"][lang])
+    except Exception:
+        if os.environ.get("PERMISSION_LENS_DEBUG"):
+            _log_debug("notify: " + traceback.format_exc())
+
+
+def send_desktop_notification(title, body):
+    """Fire a macOS notification (no-op off darwin). Best-effort, short timeout."""
+    if sys.platform != "darwin":
+        return
+    import subprocess  # lazy: keep Tier 1 startup lean
+    script = 'display notification "%s" with title "%s"' % (
+        _osa_escape(body), _osa_escape(title))
+    subprocess.run(
+        ["osascript", "-e", script],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
+    )
+
+
+def _osa_escape(text):
+    # AppleScript string literal escaping; also flatten newlines to one line.
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
+# ── M4 extension point (localhost panel — no-op today) ────────────────────────
 
 def notify(payload):
     """Stub for the future companion localhost panel (milestone M4).
@@ -893,7 +951,8 @@ TOOL_ANALYZERS = {
 def build_message(event, config=None):
     """Pure core: event dict -> systemMessage string (or None to stay silent)."""
     config = config if config is not None else load_config()
-    analyzer = TOOL_ANALYZERS.get(event.get("tool_name"))
+    tool_name = event.get("tool_name")
+    analyzer = TOOL_ANALYZERS.get(tool_name)
     if analyzer is None:  # unannotated tool -> native dialog shows unchanged
         return None
     result = analyzer(event.get("tool_input") or {}, config, config["lang"])
@@ -903,6 +962,9 @@ def build_message(event, config=None):
     notify({"subject": notify_subject, "matches": [m["id"] for m in matches]})
     if not passes_threshold(matches, config["min_severity_to_annotate"]):
         return None
+    # Desktop notification (opt-in) — the only channel that's actually visible
+    # today, since systemMessage isn't rendered on the dialog.
+    maybe_notify(tool_name, matches, config, config["lang"])
     # Tier 2 runs only for prompts we're actually going to annotate.
     llm_text = tier2_explanation(subject, config, kind)
     return render_message(

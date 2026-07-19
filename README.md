@@ -22,6 +22,27 @@ blind. Permission Lens adds a sentence of plain language and a risk note so the
 decision is an informed one. It is **not** a gatekeeper — it never returns
 allow/deny, so nothing is ever auto-approved or auto-blocked on your behalf.
 
+## Where you see the annotation (important)
+
+The hook returns its explanation as a `systemMessage`. **In the current Claude
+Code (verified on 2.1.215, CLI + Desktop), `systemMessage` from a
+`PermissionRequest` hook is not rendered on the permission dialog** — the hook
+runs and produces the annotation, but the app doesn't surface it there yet, and
+the API offers no other field to add text to the dialog without making an
+allow/deny decision (which this plugin will never do).
+
+So today there are two ways to actually *see* the risk:
+
+1. **Desktop notification** *(opt-in, macOS)* — set `notify.enabled: true` and
+   the hook fires a native notification for risky prompts (default: `high` and
+   above). The permission dialog stays native; you glance at the notification.
+2. **The `systemMessage` itself**, wherever a future Claude Code version renders
+   it. The plugin already emits it, so it lights up automatically if/when the
+   app surfaces it.
+
+If you want to confirm the analysis is correct regardless of rendering, pipe a
+command straight into the hook (see [Testing it locally](#testing-it-locally)).
+
 ## How it works
 
 Two tiers. The first is always on; the second is optional and off by default.
@@ -141,6 +162,8 @@ hook. Full example: [`config.example.json`](config.example.json).
 | `llm.api_key_env` / `llm.auth_token_env` | env var name | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Where to read your credential (see below). |
 | `llm.cache_ttl_days` | 0–365 | 7 | Response cache TTL; `0` disables the cache. |
 | `llm.send_file_content` | `true` \| `false` | `false` | Whether Tier 2 may send Write/Edit file *contents* (not just the path) to the model. Off by default. |
+| `notify.enabled` | `true` \| `false` | `false` | Fire a macOS notification for risky prompts (see [Where you see the annotation](#where-you-see-the-annotation-important)). |
+| `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | Only notify for matches at/above this severity. |
 
 ### Enabling Tier 2 (uses your own account)
 
@@ -215,6 +238,22 @@ Write 写文件 / Edit 改文件**)时,给它**补一段大白话解释 + 风险
 权限弹框经常只显示一条又长又不透明的命令,你只能盲批。Permission Lens 补上一句人话
 和一行风险提示,让这个决定是知情的。它**不是**守门员——永不返回 allow/deny,不会替你
 自动批准或自动拦截任何东西。
+
+## 注释在哪里看(重要)
+
+hook 通过 `systemMessage` 返回解释。**在当前版本的 Claude Code(在 2.1.215 上、CLI 与
+Desktop 均已验证),`PermissionRequest` hook 的 `systemMessage` 不会渲染到权限弹框上**
+——hook 确实运行、也产出了注释,但 app 暂时不在那里显示它;而 API 里除了 allow/deny
+决定之外,没有别的字段能往弹框加文字(而做决定这件事本插件永不碰)。
+
+所以现在想真正**看到**风险,有两条路:
+
+1. **系统通知**(需手动开启,macOS)——设 `notify.enabled: true`,hook 会在遇到达标风险
+   时弹一条原生通知(默认 `high` 及以上)。权限弹框保持原生不动,你瞄一眼通知即可。
+2. **`systemMessage` 本身**,在将来某个渲染它的 Claude Code 版本里。插件已经在输出它,
+   等 app 支持显示时会自动亮起来。
+
+想不管渲染、只确认分析对不对,直接把命令喂进 hook(见 [本地怎么测试](#本地怎么测试))。
 
 ## 工作原理
 
@@ -310,6 +349,8 @@ claude --plugin-dir /path/to/permission-lens
 | `llm.api_key_env` / `llm.auth_token_env` | 环境变量名 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | 从哪里读你的凭据(见下)。 |
 | `llm.cache_ttl_days` | 0–365 | 7 | 响应缓存 TTL;`0` 关闭缓存。 |
 | `llm.send_file_content` | `true` \| `false` | `false` | Tier 2 是否发送 Write/Edit 的文件**内容**(而非只发路径)。默认关闭。 |
+| `notify.enabled` | `true` \| `false` | `false` | 遇到达标风险时弹 macOS 通知(见 [注释在哪里看](#注释在哪里看重要))。 |
+| `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | 只对该级别及以上的命中弹通知。 |
 
 ### 开启 Tier 2(用你自己的账户)
 
