@@ -47,7 +47,10 @@ calls will now prompt.
 
 There's also an **opt-in macOS notification channel** (`notify.enabled`). It's
 independent of the ask gate: it can also flag calls that auto-run without ever
-showing a dialog — useful as a "this just happened" heads-up.
+showing a dialog — useful as a "this just happened" heads-up. Notifications are
+titled with the **session name** (`🔴 HIGH · auth refactor`), so with several
+windows open you can tell at a glance which one it came from — the title comes
+from the session's own name, falling back to the project folder.
 
 ## How it works
 
@@ -290,6 +293,8 @@ hook 挂在 `PreToolUse` 上。对被标记的调用,它返回 `permissionDecisi
 
 另有一条**可选的 macOS 通知通道**(`notify.enabled`),它和 ask 阈值互相独立:
 对自动放行、根本不弹框的被标记调用,它也能弹通知——当作"刚才发生了这件事"的提醒。
+通知标题会带上**会话名**(`🔴 高危 · 小工具困难排查`),同时开多个窗口时一眼就知道
+是哪个会话发来的——名字取自会话自身的标题,没有则回落到项目目录名。
 
 ## 工作原理
 

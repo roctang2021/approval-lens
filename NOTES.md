@@ -430,3 +430,31 @@ decided/implemented.
 - **Tests**: conftest gained an autouse `_hermetic_cache` fixture (all
   in-process cache writes go to tmp — heartbeat made the pre-existing gap
   matter). Suite: 232 tests (+7 in test_heartbeat.py). Plugin version 0.6.0.
+
+## M9 (2026-07-19): session name in notifications
+
+- **Why** (owner request): M6's known weakness was that notifications from
+  several concurrent sessions can't be told apart. The PreToolUse payload
+  carries `transcript_path`, and the transcript itself records the session
+  title — so the pairing problem is solvable after all.
+- **Verified 2026-07-19** against a real transcript: titles are appended as
+  their own JSONL lines, `{"type":"custom-title","customTitle":…}` (user-set)
+  and `{"type":"ai-title","aiTitle":…}` (auto-generated), both keyed by
+  sessionId. No title field exists on the hook payload itself.
+- **`session_label(event)`**: scans the transcript for the latest title of each
+  kind, prefers `custom-title` (user intent beats generated), flattens/caps at
+  60 chars; falls back to `basename(cwd)`, then None. Reads at most the last
+  4MB and pre-filters lines on `-title"` before parsing JSON. An unreadable
+  transcript falls back to the folder rather than losing the label (its own
+  try/except — a bug caught in testing).
+- **Cost containment**: called only *inside* `maybe_notify`, past the enabled +
+  threshold gates, so a below-threshold call pays nothing (tested). The
+  notification path already pays for an osascript subprocess, so the file scan
+  is not on the hot path.
+- **Composition changed**: title `{emoji} {LABEL} · {session}`, body
+  `{tool} · {explanation}`. Session identity moved to the title because "which
+  window is asking?" is the first question a notification must answer.
+- **Injection surface**: session titles are user/model-generated text now
+  interpolated into AppleScript — `_osa_escape` (existing, tested) escapes
+  backslash/quote and flattens newlines.
+- Suite: 241 tests (+9). Plugin version 0.7.0.

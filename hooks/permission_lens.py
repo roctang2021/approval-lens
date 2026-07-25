@@ -852,7 +852,55 @@ def _cache_store(path, text):
 # failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
 
 
-def maybe_notify(tool, matches, neutral, config, lang):
+# Session label for notifications: which window is this? Titles live in the
+# transcript as appended `custom-title` (user-set, authoritative) / `ai-title`
+# (auto) lines — verified 2026-07-19 against a real transcript. Only read on
+# the notification path (rare, and already paying for an osascript subprocess).
+_TITLE_KEYS = (("custom-title", "customTitle"), ("ai-title", "aiTitle"))
+_TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024  # cap the scan on very long sessions
+
+
+def session_label(event):
+    """Short human name for the session: its title, else the project folder."""
+    try:
+        found = {}
+        path = event.get("transcript_path")
+        if isinstance(path, str) and path:
+            # Its own guard: an unreadable transcript must still fall back to
+            # the folder name rather than losing the label entirely.
+            try:
+                size = os.path.getsize(path)
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    if size > _TRANSCRIPT_TAIL_BYTES:
+                        fh.seek(size - _TRANSCRIPT_TAIL_BYTES)
+                        fh.readline()  # discard the partial line
+                    for line in fh:
+                        # Cheap pre-filter: title lines are a tiny fraction of a transcript.
+                        if '-title"' not in line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                        except Exception:
+                            continue
+                        for kind, key in _TITLE_KEYS:
+                            if entry.get("type") == kind and isinstance(entry.get(key), str):
+                                found[kind] = entry[key].strip()
+            except Exception:
+                pass
+        # A user-set title wins over the generated one, whichever came last.
+        for kind, _ in _TITLE_KEYS:
+            if found.get(kind):
+                return _one_line(found[kind])[:60]
+        cwd = event.get("cwd")
+        if isinstance(cwd, str) and cwd.strip():
+            return os.path.basename(cwd.rstrip("/")) or None
+    except Exception:
+        if os.environ.get("PERMISSION_LENS_DEBUG"):
+            _log_debug("session_label: " + traceback.format_exc())
+    return None
+
+
+def maybe_notify(tool, matches, neutral, config, lang, event=None):
     try:
         n = config.get("notify")
         if not isinstance(n, dict) or not n.get("enabled"):
@@ -862,14 +910,23 @@ def maybe_notify(tool, matches, neutral, config, lang):
         # handles the no-match case (threshold <= 0).
         if not passes_threshold(matches, n.get("min_severity", "high")):
             return
+        # Resolved only past the gates — reading the transcript isn't free.
+        session = session_label(event) if event else None
+        # The session name goes in the TITLE, the most-scanned line: with
+        # several windows running, "which one is asking me?" is the first
+        # question a notification has to answer (the M6 pairing weakness).
         if matches:
             top = matches[0]
             emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
-            label = SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
+            head = emoji + " " + SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
                 top["severity"], top["severity"].upper())
-            send_desktop_notification(f"{emoji} {tool} · {label}", top["explanation"][lang])
-        else:  # only reached at min_severity "info" — benign/neutral prompt
-            send_desktop_notification(f"{INFO_EMOJI} {tool}", neutral)
+            detail = top["explanation"][lang]
+        else:  # only reached at min_severity "info" — benign/neutral call
+            head, detail = INFO_EMOJI, neutral
+        send_desktop_notification(
+            f"{head} · {session}" if session else head,
+            f"{tool} · {detail}",
+        )
     except Exception:
         if os.environ.get("PERMISSION_LENS_DEBUG"):
             _log_debug("notify: " + traceback.format_exc())
@@ -1049,7 +1106,7 @@ def build_message(event, config=None):
     notify({"subject": notify_subject, "matches": [m["id"] for m in matches]})
     # Notification channel is independent of the ask gate (its own threshold),
     # so it runs first — it can flag calls that will auto-run without a dialog.
-    maybe_notify(tool_name, matches, neutral, config, config["lang"])
+    maybe_notify(tool_name, matches, neutral, config, config["lang"], event)
     asked = passes_threshold(matches, config["ask"]["min_severity"])
     # Heartbeat: prove "this call was checked" even when the answer is {}.
     record_heartbeat(tool_name, matches, asked)
