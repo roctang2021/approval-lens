@@ -746,6 +746,19 @@ LLM_MAX_COMMAND_CHARS = 4000
 LLM_PROMPT_KINDS = ("bash", "url", "path")
 
 
+# Why Tier 2 did or didn't produce a line on the last analyzed call. Without
+# this, "no credential", "disabled", and "network error" all look identical
+# from the outside — the plugin just silently degrades to Tier 1. Surfaced by
+# scripts/lens-status.py.
+TIER2_OUTCOMES = ("off", "skipped", "cached", "no_credential", "empty", "ok", "error")
+_LAST_TIER2 = {"outcome": "off"}
+
+
+def _tier2_outcome(name):
+    _LAST_TIER2["outcome"] = name
+    return name
+
+
 def tier2_explanation(subject, config, kind="bash", event=None):
     """Return a one-line model-written explanation, or None (silent fallback).
 
@@ -756,10 +769,12 @@ def tier2_explanation(subject, config, kind="bash", event=None):
     the explanation — it never affects severity or whether the dialog appears.
     """
     llm = config.get("llm")
+    _tier2_outcome("off")
     if not isinstance(llm, dict) or not llm.get("enabled"):
         return None  # gate is pre-try, so it must tolerate unvalidated configs
     try:
         if not subject or len(subject) > LLM_MAX_COMMAND_CHARS:
+            _tier2_outcome("skipped")
             return None
         if kind not in LLM_PROMPT_KINDS:
             kind = "bash"
@@ -771,9 +786,13 @@ def tier2_explanation(subject, config, kind="bash", event=None):
         cache_path = _llm_cache_path(subject, model, lang, kind, task)
         cached = _cache_lookup(cache_path, ttl_days)
         if cached is not None:
+            _tier2_outcome("cached")
             return _one_line(cached) or None
         credential = _resolve_credential(llm)
         if credential is None:
+            # The common one, and previously invisible: a GUI-launched Claude
+            # Code never sees shell exports.
+            _tier2_outcome("no_credential")
             return None
         timeout = llm["timeout_seconds"]
         text = _run_with_deadline(
@@ -783,11 +802,14 @@ def tier2_explanation(subject, config, kind="bash", event=None):
         )
         text = _one_line(text or "")
         if not text:
+            _tier2_outcome("empty")  # deadline hit, non-2xx, or unparseable
             return None
         if ttl_days > 0:  # ttl 0 disables the cache entirely — reads AND writes
             _cache_store(cache_path, text)
+        _tier2_outcome("ok")
         return text
     except Exception:
+        _tier2_outcome("error")
         if os.environ.get("PERMISSION_LENS_DEBUG"):
             _log_debug("tier2: " + traceback.format_exc())
         return None
@@ -1094,7 +1116,10 @@ def record_heartbeat(tool, matches, asked):
             "updated": now,
             "today": today,
             "counts": counts,
-            "last": {"ts": now, "tool": tool, "severity": severity, "asked": bool(asked)},
+            "last": {"ts": now, "tool": tool, "severity": severity, "asked": bool(asked),
+                     # Only meaningful when the call reached the Tier 2 stage
+                     # (i.e. it was asked); otherwise it stays "off".
+                     "tier2": _LAST_TIER2["outcome"]},
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -1211,12 +1236,17 @@ def build_message(event, config=None):
     # so it runs first — it can flag calls that will auto-run without a dialog.
     maybe_notify(tool_name, matches, neutral, config, config["lang"], event)
     asked = passes_threshold(matches, config["ask"]["min_severity"])
-    # Heartbeat: prove "this call was checked" even when the answer is {}.
+    # Tier 2 runs only for calls we're actually going to put on a dialog.
+    llm_text = None
+    if asked:
+        llm_text = tier2_explanation(subject, config, kind, event)
+    else:
+        _tier2_outcome("off")
+    # Heartbeat last: it records "this call was checked" even when the answer
+    # is {}, and it carries the Tier 2 outcome, so it must run after Tier 2.
     record_heartbeat(tool_name, matches, asked)
     if not asked:
         return None
-    # Tier 2 runs only for calls we're actually going to put on a dialog.
-    llm_text = tier2_explanation(subject, config, kind, event)
     # notify_subject is the small, clean subject (command / URL / path) — never
     # file contents, so the detail can't leak a file body onto the dialog.
     return render_reason(

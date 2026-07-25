@@ -95,3 +95,67 @@ def test_heartbeat_failure_cannot_break_the_hook(monkeypatch):
     monkeypatch.setattr(_os, "replace", boom)
     reason = pl.build_message(_event(HIGH_CMD), _cfg())
     assert reason is not None and reason.startswith("🔴")  # fail-open preserved
+
+
+# ── Tier 2 outcome (M12): make silent degradation visible ─────────────────────
+
+def _llm_cfg(**over):
+    cfg = _cfg()
+    cfg["llm"].update({"enabled": True, "api_key_env": "PL_NO_SUCH_KEY",
+                       "auth_token_env": "PL_NO_SUCH_TOKEN", **over})
+    return cfg
+
+
+def test_outcome_off_when_tier2_disabled():
+    pl.build_message(_event(HIGH_CMD), _cfg())
+    assert _read_heartbeat()["last"]["tier2"] == "off"
+
+
+def test_outcome_no_credential_is_recorded(monkeypatch):
+    monkeypatch.delenv("PL_NO_SUCH_KEY", raising=False)
+    monkeypatch.delenv("PL_NO_SUCH_TOKEN", raising=False)
+    pl.build_message(_event(HIGH_CMD), _llm_cfg())
+    # The exact case that made Tier 2 look broken on a GUI-launched app.
+    assert _read_heartbeat()["last"]["tier2"] == "no_credential"
+
+
+def test_outcome_ok_then_cached(monkeypatch):
+    import urllib.request
+
+    class Resp:
+        def read(self):
+            return json.dumps({"content": [{"type": "text", "text": "line"}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: Resp())
+    cfg = _llm_cfg(api_key_env="PL_TEST_KEY")
+    pl.build_message(_event(HIGH_CMD), cfg)
+    assert _read_heartbeat()["last"]["tier2"] == "ok"
+    pl.build_message(_event(HIGH_CMD), cfg)
+    assert _read_heartbeat()["last"]["tier2"] == "cached"
+
+
+def test_outcome_empty_on_api_failure(monkeypatch):
+    import urllib.request
+
+    def boom(*a, **k):
+        raise OSError("no network")
+    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    assert _read_heartbeat()["last"]["tier2"] == "empty"
+
+
+def test_outcome_off_for_calls_that_never_reach_tier2(monkeypatch):
+    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    # A benign call is below the ask gate, so Tier 2 is never consulted — the
+    # outcome must not leak from a previous call in the same process.
+    pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    pl.build_message(_event("ls -la"), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    assert _read_heartbeat()["last"]["tier2"] == "off"

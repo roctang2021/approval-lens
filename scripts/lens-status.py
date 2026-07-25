@@ -34,6 +34,12 @@ FALLBACK = {
               "in a plugin-enabled session first (heartbeat: {path})"),
     "stale_day": "(counters are from {day}, not today)",
     "s": "{n}s ago", "m": "{n} min ago", "h": "{n} h ago", "d": "{n} d ago",
+    "tier2": "Tier 2: {state}",
+    "tier2_off": "not enabled", "tier2_skipped": "skipped (subject too long)",
+    "tier2_cached": "served from cache",
+    "tier2_no_credential": "no credential visible to the hook",
+    "tier2_empty": "no answer (timeout or API error)", "tier2_ok": "working",
+    "tier2_error": "internal error",
 }
 
 
@@ -88,6 +94,13 @@ def main():
     if hb.get("today") and hb["today"] != today:
         line += " " + _text(locale, "stale_day").format(day=hb["today"])
     print(line)
+
+    # Tier 2 is opt-in and degrades silently by design; without this line
+    # "disabled", "no credential" and "network error" are indistinguishable.
+    if (pl.load_config().get("llm") or {}).get("enabled"):
+        outcome = last.get("tier2")
+        key = f"tier2_{outcome}" if outcome in pl.TIER2_OUTCOMES else "tier2_off"
+        print(_text(locale, "tier2").format(state=_text(locale, key)))
 
 
 if __name__ == "__main__":

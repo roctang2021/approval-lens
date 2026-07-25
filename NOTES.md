@@ -527,3 +527,24 @@ different cost tiers.
   and the ask untouched.
 - `_scan_transcript` now backs both `session_label` and `task_context`.
 - Suite: 296 tests (+19, tests/test_task_context.py). Version 0.9.0.
+
+## M12 (2026-07-24): Tier 2 outcome is observable
+
+- **Trigger**: Tier 2 was enabled for live testing and produced nothing — no
+  `🤖` line, no `llm/` cache dir, no error. Diagnosis: the Claude Desktop
+  process (checked with `ps eww`, names only) has **no** `ANTHROPIC_API_KEY` in
+  its environment. `launchctl setenv` only reaches processes started AFTER it,
+  and the app predates the setenv, so hook subprocesses see no credential and
+  `_resolve_credential` returns None → silent Tier 1 fallback, exactly as
+  designed and completely invisible.
+- **Fix for the invisibility** (the real defect): `tier2_explanation` records
+  an outcome — off / skipped / cached / no_credential / empty / ok / error —
+  into `_LAST_TIER2`, the heartbeat carries it, and `lens-status` prints a
+  `Tier 2: …` line whenever llm.enabled. "Disabled", "no credential" and
+  "network error" are no longer indistinguishable.
+- **Ordering change**: `record_heartbeat` now runs AFTER Tier 2 (it needs the
+  outcome), and the outcome is explicitly reset to "off" for calls that never
+  reach the Tier 2 stage, so nothing leaks between calls in one process.
+- New status strings live in en/zh only; other locales inherit them via the
+  per-key fallback — which is the fallback design working as intended.
+- Suite: 301 tests (+5). Version 0.9.1.
