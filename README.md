@@ -15,14 +15,15 @@ What a flagged dialog shows (one flowing line):
 ```
 🔴 HIGH · get.docker.com · This downloads a script and runs it immediately —
 you never see the code, and the site could serve different content than what
-anyone reviewed. · AI: Fetches the Docker install script and pipes it to
-bash.                                              ← the AI part is optional
+anyone reviewed. (AI note: Fetches the Docker install script and pipes it to
+bash.)                                        ← the bracketed part is optional
 ```
 
 Severity leads, then the concrete target pulled from the command itself, then
-why this class of operation is risky. Anything after `AI:` is model-written
-(Tier 2, opt-in) — labelled so you can tell generated text from the audited
-rule copy, because only the latter is deterministic.
+why this class of operation is risky. The bracketed `AI note:` is model-written
+(Tier 2, opt-in) — set apart so you can tell generated text from the audited
+rule copy, because only the latter is deterministic and only the rules decide
+severity.
 
 ## Why
 
@@ -324,13 +325,14 @@ MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
 
 ```
 🔴 高危 · get.docker.com · 这会从网上下载脚本并立刻运行——你看不到代码内容,
-网站也可能在被审查之后换成另一份。 · AI:下载 Docker 安装脚本并交给 bash
-执行。                                                  ← AI 那段是可选的
+网站也可能在被审查之后换成另一份。(AI 解读:下载 Docker 安装脚本并交给 bash
+执行。)                                             ← 括号那段是可选的
 ```
 
 严重度在最前,紧接着是从命令里提取出的具体目标,然后才是"这类操作为什么危险"。
-`AI:` 之后的内容由模型生成(Tier 2,需手动开启),明确标注是为了让你分得清哪部分
-是生成的、哪部分是审计过的规则文案——只有后者是确定性的。
+括号里的 `AI 解读:` 由模型生成(Tier 2,需手动开启),单独用括号圈出来是为了让你
+分得清哪部分是生成的、哪部分是审计过的规则文案——只有后者是确定性的,而且严重度
+永远只由规则决定。
 
 ## 为什么
 

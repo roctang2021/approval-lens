@@ -681,6 +681,13 @@ def neutral_summary_path(file_path, label_key, lang=LANG):
 # unexplained 🤖/📍 emoji did not carry that meaning (owner feedback 2026-07-25).
 
 PART_SEP = " · "
+# The model segment is wrapped in parentheses rather than joined with `·`.
+# `·` reads as "another item of the same kind", which is wrong for a fallible
+# aside sitting beside audited copy; a dash collides with the em dashes the rule
+# copy already uses. Parentheses are the standard typographic signal for
+# supplementary, subordinate text — they demote it without hiding it (owner
+# feedback 2026-07-25: a bare "AI:" read as a debug tag).
+AI_WRAP_FALLBACK = " (AI note: {})"
 
 
 def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None,
@@ -716,11 +723,17 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
             break
     # Tier 2 goes last so truncation always prefers the deterministic Tier 1
     # content over the model-written extra.
+    line = PART_SEP.join(_one_line(p) for p in parts)
     if llm_text:
-        # The prefix carries its own punctuation and spacing so each locale can
-        # follow its own convention (en "AI: ", zh "AI：", fr "IA : ").
-        parts.append(ui_text(locale, "ai_label", "AI: ") + llm_text)
-    return _truncate(PART_SEP.join(_one_line(p) for p in parts), max_chars)
+        # The template owns the label, the brackets, and the leading space, so
+        # each locale follows its own convention (en " (AI note: {})",
+        # zh "（AI 解读：{}）"). A template missing its {} would silently drop the
+        # model text, so fall back rather than trust it.
+        wrap = ui_text(locale, "ai_wrap", AI_WRAP_FALLBACK)
+        if "{}" not in wrap:
+            wrap = AI_WRAP_FALLBACK
+        line += wrap.format(_one_line(llm_text))
+    return _truncate(line, max_chars)
 
 
 def passes_threshold(matches, min_severity):

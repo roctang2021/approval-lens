@@ -187,7 +187,7 @@ rules:
     explanation: 寫入的內容含下載即執行
     risk: 要寫入的內容裡含有下載即執行（或 eval）的指令——這個檔案將來一旦被執行，就會從網路拉程式碼直接跑，沒有人審查過。
 ui:
-  ai_label: "AI："
+  ai_wrap: "（AI 解讀：{}）"
   severity_high: 高風險
   severity_medium: 中風險
   severity_low: 低風險

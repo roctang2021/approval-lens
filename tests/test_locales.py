@@ -173,9 +173,23 @@ def test_base_prompts_name_the_division_of_labour():
         assert "never advise approving or rejecting" in text, f"{kind}: must forbid verdicts"
 
 
-def test_ai_label_is_present_and_distinct_per_locale():
-    labels = {lang: pl.ui_text(pl.load_locale(lang), "ai_label") for lang in LANGS}
-    assert all(labels.values()), f"missing ai_label: {labels}"
-    # The label is what tells a reader which half is generated and may be wrong;
-    # an empty or whitespace-only one would silently erase that distinction.
-    assert all(v.strip() for v in labels.values()), labels
+def test_ai_wrap_is_present_and_has_a_placeholder():
+    wraps = {lang: pl.ui_text(pl.load_locale(lang), "ai_wrap") for lang in LANGS}
+    assert all(wraps.values()), f"missing ai_wrap: {wraps}"
+    # The wrapper is what tells a reader which half is generated and may be
+    # wrong; losing it would silently erase that distinction. Losing the {}
+    # would silently drop the model text altogether.
+    for lang, wrap in wraps.items():
+        assert "{}" in wrap, f"{lang}: ai_wrap lost its placeholder: {wrap!r}"
+        assert wrap.replace("{}", "").strip(), f"{lang}: ai_wrap has no label text"
+
+
+def test_broken_ai_wrap_falls_back_instead_of_dropping_the_model_text(monkeypatch):
+    # A translator can plausibly drop the {} — that must not silently swallow
+    # the whole model sentence.
+    broken = dict(pl.load_locale("en"))
+    broken["ui"] = dict(broken["ui"], ai_wrap=" (AI note: )")
+    monkeypatch.setattr(pl, "_LOCALE_CACHE", {"xx": broken})
+    reason = pl.render_reason(pl.analyze(pl.Parsed("rm -rf $X/*")), lang="xx",
+                              llm_text="MODEL TEXT")
+    assert "MODEL TEXT" in reason

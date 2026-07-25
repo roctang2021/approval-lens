@@ -191,7 +191,7 @@ rules:
     explanation: El contenido escrito descarga y ejecuta código
     risk: El texto que se va a escribir contiene una orden de descargar y ejecutar código — cada vez que este archivo se ejecute, traerá código de internet y lo lanzará sin que nadie lo haya revisado.
 ui:
-  ai_label: "IA: "
+  ai_wrap: " (Nota de IA: {})"
   severity_high: ALTO
   severity_medium: MEDIO
   severity_low: BAJO

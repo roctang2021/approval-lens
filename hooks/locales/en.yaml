@@ -183,7 +183,7 @@ rules:
     explanation: Written content downloads and runs code
     risk: The text being written contains a download-and-run (or eval) command — whenever this file later runs, it will pull code from the internet and execute it unreviewed.
 ui:
-  ai_label: "AI: "
+  ai_wrap: " (AI note: {})"
   severity_high: HIGH
   severity_medium: MEDIUM
   severity_low: LOW

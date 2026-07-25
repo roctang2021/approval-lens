@@ -605,3 +605,21 @@ Tier 2 were both answering "how dangerous is this?".
 - Suite: 315 tests (+8): prompts must keep the no-rating clauses, every locale
   must ship an `ai_label`, layout assertions moved from emoji markers to
   positional parts. Version 0.11.0.
+
+### M14 follow-up: the AI segment reads as an aside, not a debug tag
+
+Owner review of the shipped layout: a bare `AI:` joined by ` · ` was too blunt
+— a mechanism label presented as a peer of the rule copy. Dropping the marker
+entirely was rejected: this plugin's whole posture is that its fallible parts
+are visible (the model demonstrably got a wrapped `echo …` wrong), so hiding
+which half is generated would be off-brand.
+
+Fix is typographic demotion plus softer wording, not removal:
+- `ui.ai_wrap` is now a full template owning label, brackets and spacing —
+  en `" (AI note: {})"`, zh `"（AI 解读：{}）"`, fr `" (Note IA : {})"`. A
+  missing `{}` falls back rather than silently swallowing the model sentence
+  (tested).
+- Brackets rather than a dash: the rule copy already uses em dashes heavily
+  ("立刻运行——你看不到代码内容"), so a ` — ` separator collided with them. A
+  first attempt at a dash was replaced for exactly that reason.
+- Version 0.11.1, 316 tests.

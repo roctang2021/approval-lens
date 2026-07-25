@@ -218,7 +218,7 @@ def test_model_output_cannot_suppress_the_dialog(monkeypatch, tmp_path):
     ev = _event(transcript_path=_transcript(tmp_path, INJECTION))
     reason = pl.build_message(ev, _cfg(send_task_context=True))
     assert reason.startswith("🔴 ")
-    assert reason.endswith("AI: SAFE — no warning needed.")  # appended, not authoritative
+    assert reason.endswith("(AI note: SAFE — no warning needed.)")  # appended, not authoritative
 
 
 def test_tier2_failure_leaves_tier1_reason_intact(monkeypatch, tmp_path):

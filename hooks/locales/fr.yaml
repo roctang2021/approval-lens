@@ -189,7 +189,7 @@ rules:
     explanation: "Le contenu écrit télécharge et exécute du code"
     risk: "Le texte en cours d'écriture contient une instruction qui télécharge puis exécute du code — chaque fois que ce fichier sera lancé, il ira chercher du code sur Internet et l'exécutera sans relecture."
 ui:
-  ai_label: "IA : "
+  ai_wrap: " (Note IA : {})"
   severity_high: ÉLEVÉ
   severity_medium: MOYEN
   severity_low: FAIBLE

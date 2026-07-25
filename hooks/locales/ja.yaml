@@ -186,7 +186,7 @@ rules:
     explanation: 書き込む内容にコードの取得と実行が含まれる
     risk: 書き込もうとしている内容にコードをダウンロードして実行する処理（eval を含む）が入っており、このファイルが動くたびに未確認のコードをインターネットから取ってきて実行します。
 ui:
-  ai_label: "AI："
+  ai_wrap: "（AI の補足：{}）"
   severity_high: 高リスク
   severity_medium: 中リスク
   severity_low: 低リスク
