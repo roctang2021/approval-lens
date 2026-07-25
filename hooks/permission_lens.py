@@ -290,20 +290,63 @@ _STATEMENT_SEPS = {";", "\n"}
 _TWO_CHAR_OPS = {"&&", "||"}
 
 
+# A heredoc body is DATA, not shell: `cat >> NOTES.md <<'EOF' … EOF` writes
+# prose, `python3 - <<'PY' … PY` runs Python. Statements split on newlines, so
+# without this every line of that payload was parsed as its own command — a
+# documentation line starting with the word `mkfs` became an `mkfs` invocation
+# (found 2026-07-25: writing release notes *about* dangerous commands set off
+# 🔴 every time). The exception is a heredoc fed to a shell, whose body really
+# is shell code and must stay analyzed.
+_HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_]\w*)\1")
+_SHELL_INTERPRETERS = ("bash", "sh", "zsh", "dash", "ksh", "fish")
+
+
+def _strip_heredoc_payloads(command):
+    """Drop heredoc bodies whose receiving command is not a shell."""
+    if "<<" not in command:
+        return command
+    kept, lines = [], command.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        kept.append(line)
+        i += 1
+        opener = _HEREDOC_OPEN_RE.search(line)
+        if not opener:
+            continue
+        # `bash <<EOF` executes its body; `cat`/`python3`/`tee` do not.
+        head = os.path.basename((line.split("<<", 1)[0].split() or [""])[0])
+        feeds_shell = head in _SHELL_INTERPRETERS or any(
+            os.path.basename(tok) in _SHELL_INTERPRETERS
+            for tok in line.split("<<", 1)[0].split())
+        delimiter = opener.group(2)
+        while i < len(lines) and lines[i].strip() != delimiter:
+            if feeds_shell:
+                kept.append(lines[i])
+            i += 1
+        if i < len(lines):  # the delimiter line itself is not data
+            i += 1
+    return "\n".join(kept)
+
+
 class Parsed:
     """Best-effort structural view of a shell command string."""
 
     def __init__(self, command):
         self.command = command
+        # `code` is what rules analyze: the command minus any heredoc payload
+        # that is data rather than shell. `command` stays verbatim for anything
+        # that needs the original text.
+        self.code = _strip_heredoc_payloads(command)
         self.has_command_sub = bool(re.search(r"\$\(", command))
         self.has_backtick = "`" in command
         self.has_process_sub = bool(re.search(r"[<>]\(", command))
         # Pipeline stages across every statement, including the bodies of
         # $(...) / `...` / <(...) so `bash <(curl ...)` and `$(curl ... | sh)`
-        # are analyzed too.
+        # are analyzed too — but NOT heredoc payloads that are plain data.
         self.stages = []
         self.simple_commands = []  # list[SimpleCommand]
-        for chunk in _iter_command_chunks(command):
+        for chunk in _iter_command_chunks(self.code):
             for stage in _split_pipeline(chunk):
                 stage = stage.strip()
                 if stage:
@@ -656,7 +699,9 @@ def _rule_matches(rule, parsed):
         return False
     if rule["scope"] == "segment":
         return any(regex.search(stage) for stage in parsed.stages)
-    return bool(regex.search(parsed.command))
+    # `code`, not `command`: a heredoc payload that is data must not be scanned
+    # as if it were shell (see _strip_heredoc_payloads).
+    return bool(regex.search(parsed.code))
 
 
 def match_string_rules(rules, subjects):

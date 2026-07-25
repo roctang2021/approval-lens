@@ -660,3 +660,28 @@ was wrong (🔴, the target, the rule sentence, and the cached AI note).
   Separate rule, deliberately not folded into this change.
 - Suite: 346 tests (+30): 7 quoted-mention entries in the benign corpus, plus
   invocation/wrapper/anchoring tests. Version 0.12.0.
+
+## M16 (2026-07-25): a heredoc payload is data, not shell
+
+Same disease as M15, different carrier: M15 was text hidden inside quotes,
+this is text hidden after a newline.
+
+- **Symptom**, spotted by the owner on a live dialog: a release command reading
+  `cat >> NOTES.md <<'EOF' … EOF` produced "🔴 高危 · /dev/disk2 · 这会格式化
+  一个存储设备". Nothing was being formatted — the payload was prose.
+- **Root cause**: statements split on newlines, so every line of a heredoc was
+  parsed as its own command. A documentation line beginning `mkfs.ext4
+  /dev/disk2 …` became stage name `mkfs.ext4`, passed the new verb guard
+  (it IS in command position, for a statement that was never a statement), and
+  the `device` extractor pulled `/dev/disk2` out of the same prose. Writing
+  release notes *about* dangerous commands set off 🔴 every time — the plugin
+  false-alarmed on the very commit fixing its previous false alarm.
+- **Fix**: `Parsed.code` is the command with data heredoc payloads removed;
+  every rule now matches `code` rather than the verbatim `command` (which is
+  kept for anything needing the original text).
+- **The exception that keeps it honest**: `bash <<EOF` / `sh <<EOF` EXECUTE
+  their body, so those payloads stay analyzed. Dropping them would trade a
+  false positive for a false negative, which is the wrong direction for a
+  security tool. Tested both ways.
+- Unterminated heredoc → everything after the opener is treated as payload.
+- Suite: 351 tests (+5). Version 0.13.0.
