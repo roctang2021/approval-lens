@@ -25,21 +25,25 @@ rules:
     category: destructive-fs
     severity: high
     predicate: rm_recursive_risky_target
+    detail: rm_target
 
   - id: rm-rf-plain
     category: destructive-fs
     severity: medium
     predicate: rm_recursive_plain
+    detail: rm_target
 
   - id: dd-to-device
     category: destructive-fs
     severity: high
     regex: '\bdd\b[^|;&]*\bof=/dev/'
+    detail: device
 
   - id: mkfs
     category: destructive-fs
     severity: high
     regex: '\bmkfs(\.\w+)?\b'
+    detail: device
 
   - id: shred
     category: destructive-fs
@@ -61,27 +65,32 @@ rules:
     category: remote-exec
     severity: high
     regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
+    detail: url_host
 
   - id: shell-from-process-sub
     category: remote-exec
     severity: high
     regex: '\b(bash|sh|zsh|dash|ksh)\b\s*<\(\s*(curl|wget|fetch)\b'
+    detail: url_host
 
   - id: curl-pipe-interpreter
     category: remote-exec
     severity: high
     regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
+    detail: url_host
 
   # ── data exfiltration ─────────────────────────────────────────────────────
   - id: curl-upload-file
     category: exfiltration
     severity: high
     regex: '\b(curl|wget)\b[^|;&]*(\s-d\s*@|--data(-binary|-raw|-urlencode)?\s*@|-F\s+\S*=@|\s-T\s+|--upload-file\b)'
+    detail: url_host
 
   - id: file-piped-to-network
     category: exfiltration
     severity: high
     regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|\s*(curl|wget|nc|ncat|netcat|socat)\b'
+    detail: url_host
 
   - id: netcat-outbound
     category: exfiltration
@@ -124,11 +133,13 @@ rules:
     category: obfuscation
     severity: high
     regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
+    detail: url_host
 
   - id: hex-decode-exec
     category: obfuscation
     severity: high
     regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|\s*(bash|sh|zsh|python[0-9.]*)\b'
+    detail: url_host
 
   - id: eval-dynamic
     category: obfuscation

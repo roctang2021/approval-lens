@@ -14,53 +14,63 @@ rules:
     category: credential-access
     severity: high
     regex: "(^|/)\\.ssh/"
+    detail: path
 
   - id: path-aws
     category: credential-access
     severity: high
     regex: "(^|/)\\.aws/"
+    detail: path
 
   - id: path-dotenv
     category: credential-access
     severity: medium
     regex: "(^|/)\\.env(\\.[\\w.-]+)?$"
+    detail: path
 
   # ── persistence / auto-run ────────────────────────────────────────────────
   - id: path-shell-rc
     category: persistence
     severity: medium
     regex: "(^|/)\\.(bash_profile|bashrc|zshrc|zprofile|zshenv|profile)$"
+    detail: path
 
   - id: path-git-hooks
     category: persistence
     severity: high
     regex: "(^|/)\\.git/hooks/"
+    detail: path
 
   - id: path-ci-workflow
     category: persistence
     severity: medium
     regex: "(^|/)\\.github/workflows/"
+    detail: path
 
   - id: path-launch-agent
     category: persistence
     severity: high
     regex: "(^|/)Library/Launch(Agents|Daemons)/"
+    detail: path
 
   - id: path-cron
     category: persistence
     severity: medium
     regex: "(^|/)(crontab$|cron\\.d/|etc/cron)"
+    detail: path
 
   # ── privileged / system ───────────────────────────────────────────────────
   - id: path-sudoers
     category: privilege
     severity: high
     regex: "(^|/)sudoers"
+    detail: path
 
   - id: path-etc
     category: privilege
     severity: medium
     regex: "^/etc/"
+    detail: path
 
   # ── content injection (Edit new_string / Write content) ───────────────────
   - id: content-remote-exec

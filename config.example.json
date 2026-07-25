@@ -11,7 +11,8 @@
     "api_key_env": "ANTHROPIC_API_KEY",
     "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
     "cache_ttl_days": 7,
-    "send_file_content": false
+    "send_file_content": false,
+    "send_task_context": false
   },
   "notify": {
     "enabled": false,

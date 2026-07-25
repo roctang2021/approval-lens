@@ -11,23 +11,28 @@ rules:
     category: credential-access
     severity: high
     regex: "^[a-zA-Z][\\w+.-]*://[^/@?#\\s]*:[^/@?#\\s]*@"
+    detail: url_host
 
   - id: web-secret-in-query
     category: exfiltration
     severity: medium
     regex: "[?&](access[_-]?token|api[_-]?key|apikey|auth|token|secret|password|passwd|pwd|session)="
+    detail: url_host
 
   - id: web-ip-or-localhost
     category: internal-target
     severity: medium
     regex: "://(\\[[0-9a-fA-F:]+\\]|(\\d{1,3}\\.){3}\\d{1,3}|localhost)(:|/|$)"
+    detail: url_host
 
   - id: web-script-host
     category: remote-content
     severity: low
     regex: "://([\\w.-]*\\.)?(raw\\.githubusercontent\\.com|gist\\.githubusercontent\\.com|pastebin\\.com|bit\\.ly|tinyurl\\.com|goo\\.gl)(:|/|$)"
+    detail: url_host
 
   - id: web-insecure-http
     category: insecure-transport
     severity: low
     regex: "^http://"
+    detail: url_host

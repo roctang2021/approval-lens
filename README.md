@@ -174,8 +174,35 @@ hook. Full example: [`config.example.json`](config.example.json).
 | `llm.api_key_env` / `llm.auth_token_env` | env var name | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Where to read your credential (see below). |
 | `llm.cache_ttl_days` | 0–365 | 7 | Response cache TTL; `0` disables the cache. |
 | `llm.send_file_content` | `true` \| `false` | `false` | Whether Tier 2 may send Write/Edit file *contents* (not just the path) to the model. Off by default. |
+| `llm.send_task_context` | `true` \| `false` | `false` | Whether Tier 2 may send **your current request** so the model can say whether the operation fits what you asked for. Off by default — see [Task context](#task-context-opt-in). |
 | `notify.enabled` | `true` \| `false` | `false` | Fire a macOS notification for flagged calls — independent of the ask gate, so it also covers flagged calls that auto-run. |
 | `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | Only notify for matches at/above this severity. |
+
+### Task context (opt-in)
+
+Rules describe a *category* of risk; they can't know what you were trying to
+do. Ask Claude to install Homebrew and its documented `curl … | sh` installer
+gets the same red warning as a script from a domain you've never heard of —
+and a warning that fires equally for both trains you to ignore it.
+
+With `"llm": { "enabled": true, "send_task_context": true }`, Tier 2 also
+receives **your current request** (the last prompt in this session, one line,
+truncated) so its `🤖` line can open with whether the operation actually
+serves what you asked for — "matches your request to install Docker" versus
+"unrelated to fixing the failing test".
+
+Two things this deliberately does **not** do:
+
+- **It never lowers the severity or cancels the dialog.** The rules decide
+  that, offline, before the model is ever called. The context is
+  attacker-reachable — a web page fetched earlier in the session can end up in
+  your transcript — so anything that could talk the plugin into silence would
+  be a vulnerability, not a feature. The system prompt marks the request as
+  untrusted context, and the model's reply is only ever *appended* to the
+  Tier 1 explanation.
+- **It is not on by default.** This is the one setting that puts your own
+  words on the wire (to your own Anthropic account). Everything else Tier 2
+  sends is the command, URL, or path already in front of you.
 
 ## Languages
 
@@ -423,8 +450,29 @@ claude --plugin-dir /path/to/permission-lens
 | `llm.api_key_env` / `llm.auth_token_env` | 环境变量名 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | 从哪里读你的凭据(见下)。 |
 | `llm.cache_ttl_days` | 0–365 | 7 | 响应缓存 TTL;`0` 关闭缓存。 |
 | `llm.send_file_content` | `true` \| `false` | `false` | Tier 2 是否发送 Write/Edit 的文件**内容**(而非只发路径)。默认关闭。 |
+| `llm.send_task_context` | `true` \| `false` | `false` | Tier 2 是否发送**你当前的请求**,让模型判断这次操作是否符合你要做的事。默认关闭——见 [任务上下文](#任务上下文需手动开启)。 |
 | `notify.enabled` | `true` \| `false` | `false` | 对被标记的调用弹 macOS 通知——与 ask 阈值互相独立,自动放行的被标记调用也会通知。 |
 | `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | 只对该级别及以上的命中弹通知。 |
+
+### 任务上下文(需手动开启)
+
+规则描述的是"这一类"操作的风险,它不知道你当时想做什么。你让 Claude 装 Homebrew,
+官方的 `curl … | sh` 安装命令会和一个你没听过的域名发来的脚本得到同样的红色警告——
+而一个对两者一视同仁的警告,最终只会训练你忽略它。
+
+设 `"llm": { "enabled": true, "send_task_context": true }` 后,Tier 2 会额外收到
+**你当前的请求**(本会话最近一条提示词,压成一行并截断),于是它的 `🤖` 那行可以先说清
+这次操作到底符不符合你要做的事——"与你要求安装 Docker 一致" 还是 "与你要修的那个
+测试无关"。
+
+有两件事它**刻意不做**:
+
+- **绝不降低严重度、绝不取消弹框。** 那是规则在离线阶段、在模型被调用之前就决定好的。
+  上下文是攻击者可触及的——会话中早前抓取的某个网页,其内容可能进入 transcript——所以
+  任何"能说服插件闭嘴"的通道都是漏洞而不是功能。系统提示词明确把请求标记为不可信上下文,
+  模型的回复也只会**追加**在 Tier 1 解释之后。
+- **默认不开。** 这是唯一一个会把你自己写的字送上网络的设置(发往你自己的 Anthropic
+  账户)。Tier 2 其他要发的东西——命令、URL、路径——本来就摆在你眼前。
 
 ## 语言
 

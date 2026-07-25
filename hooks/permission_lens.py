@@ -174,6 +174,13 @@ DEFAULT_CONFIG = {
         # a command string / URL / path is a far smaller data surface than a
         # file body. Must be literal true to enable.
         "send_file_content": False,
+        # Whether to send the developer's CURRENT REQUEST (the last prompt in
+        # this session) alongside the operation, so the model can say whether
+        # the operation fits what was actually asked for. Off by default: this
+        # is the one setting that puts your own words on the wire. It can only
+        # enrich the explanation — severity and the ask decision come from the
+        # offline rules and are never influenced by it.
+        "send_task_context": False,
     },
     # Desktop notification channel (opt-in). Independent of the ask gate: it
     # fires for any flagged call at/above its own min_severity — including
@@ -237,6 +244,7 @@ def _validate_config(raw):
         llm["cache_ttl_days"] = _clamped_number(
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
         llm["send_file_content"] = llm_raw.get("send_file_content") is True
+        llm["send_task_context"] = llm_raw.get("send_task_context") is True
     notify_raw = raw.get("notify")
     if isinstance(notify_raw, dict):
         n = cfg["notify"]
@@ -462,6 +470,71 @@ PREDICATES = {
 }
 
 
+# ── detail extraction ─────────────────────────────────────────────────────────
+#
+# Rule copy describes a CATEGORY of risk ("downloads a script and runs it").
+# The dialog is far more useful when it also names the concrete thing at hand
+# ("from get.docker.com" vs "from a1b2c3.xyz"). Extractors pull that fact out
+# of the command itself: offline, no model, no network, no privacy cost. A rule
+# opts in via `detail: <name>` in rules*.yaml; anything that can't be resolved
+# just yields nothing and the reason renders exactly as before.
+
+_URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
+# `of=` is the DESTINATION — the thing that gets overwritten. Naming the `if=`
+# source instead would point at the harmless half of `dd if=/dev/zero of=/dev/disk2`.
+_DD_TARGET_RE = re.compile(r"\bof=(\S+)")
+_DEVICE_RE = re.compile(r"(/dev/[\w/]+)")
+_DETAIL_MAX = 48
+
+
+def _detail_url_host(parsed, subject):
+    """Host of the first URL in the command — who the code/data comes from."""
+    m = _URL_IN_TEXT_RE.search(subject or "")
+    return m.group(1) if m else ""
+
+
+def _detail_rm_target(parsed, subject):
+    """What an rm -r would actually delete."""
+    for sc in _rm_commands(parsed or Parsed(subject or "")):
+        targets = _rm_targets(sc)
+        if targets:
+            return " ".join(targets[:2])
+    return ""
+
+
+def _detail_device(parsed, subject):
+    """The device being written to/formatted — never the read source."""
+    m = _DD_TARGET_RE.search(subject or "") or _DEVICE_RE.search(subject or "")
+    return m.group(1) if m else ""
+
+
+def _detail_path(parsed, subject):
+    """The file being written/edited (kept as given, ~ not expanded)."""
+    return (subject or "").strip()
+
+
+DETAIL_EXTRACTORS = {
+    "url_host": _detail_url_host,
+    "rm_target": _detail_rm_target,
+    "device": _detail_device,
+    "path": _detail_path,
+}
+
+
+def extract_detail(rule, parsed, subject):
+    """Short concrete fact for a matched rule, or "" when there's nothing to add."""
+    fn = DETAIL_EXTRACTORS.get(rule.get("detail") or "")
+    if not fn:
+        return ""
+    try:
+        value = _one_line(str(fn(parsed, subject) or ""))
+    except Exception:
+        return ""
+    if len(value) > _DETAIL_MAX:
+        value = value[:_DETAIL_MAX - 1] + "…"
+    return value
+
+
 # ── rule engine ───────────────────────────────────────────────────────────────
 
 _RULES_CACHE = {}  # keyed by yaml path -> compiled rule list
@@ -486,6 +559,8 @@ def _load_rules_from(path, default_field="path"):
             "scope": raw.get("scope", "whole"),
             # which subject string a string-rule matches against (see match_string_rules)
             "field": raw.get("field", default_field),
+            # optional DETAIL_EXTRACTORS name: the concrete fact to name on the dialog
+            "detail": raw.get("detail", ""),
         })  # user-visible text is resolved per language from locales/<lang>.yaml
     _RULES_CACHE[path] = rules
     return rules
@@ -589,20 +664,27 @@ def neutral_summary_path(file_path, label_key, lang=LANG):
 # emojis double as visual separators: 🔴 headline · 🟡 extra risk · 🤖 model line.
 
 LLM_EMOJI = "🤖"
+DETAIL_EMOJI = "📍"  # marks the concrete target; no localized label needed
 
 
-def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None):
+def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None,
+                  detail=""):
     """Matched rules -> the single-line permissionDecisionReason.
 
     Requires at least one match (the ask gate guarantees it). The headline is
-    the top rule's `risk` sentence — written in the YAML as a self-contained
+    the top rule's `risk` sentence — written in the locale as a self-contained
     plain-language sentence: what the call does AND why it matters, no jargon.
+    `detail` is the concrete target pulled from the command itself (see
+    extract_detail); it needs no translation, so it rides on the 📍 marker
+    rather than a localized label.
     """
     locale = load_locale(lang)
     top = matches[0]
     sev = top["severity"]
     emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
     parts = [f"{emoji} {severity_label(locale, sev)} · {rule_text(locale, top['id'], 'risk')}"]
+    if detail:
+        parts.append(f"{DETAIL_EMOJI} {detail}")
     # Up to two additional distinct risks (dedupe by category to avoid near-dupes);
     # extras use the short `explanation` phrase, not the full sentence.
     seen = {top["category"]}
@@ -664,11 +746,14 @@ LLM_MAX_COMMAND_CHARS = 4000
 LLM_PROMPT_KINDS = ("bash", "url", "path")
 
 
-def tier2_explanation(subject, config, kind="bash"):
+def tier2_explanation(subject, config, kind="bash", event=None):
     """Return a one-line model-written explanation, or None (silent fallback).
 
     `subject` is the exact string sent to the model (command / URL / path[+content]);
-    `kind` selects the system prompt. Never includes cwd/session/transcript.
+    `kind` selects the system prompt. The developer's current request is added
+    ONLY when llm.send_task_context is on; nothing else from the session (cwd,
+    ids, transcript) is ever sent. Whatever comes back can only be appended to
+    the explanation — it never affects severity or whether the dialog appears.
     """
     llm = config.get("llm")
     if not isinstance(llm, dict) or not llm.get("enabled"):
@@ -679,8 +764,11 @@ def tier2_explanation(subject, config, kind="bash"):
         if kind not in LLM_PROMPT_KINDS:
             kind = "bash"
         model, lang = llm["model"], config.get("lang", "en")
+        task = task_context(event) if (event and llm.get("send_task_context")) else ""
         ttl_days = llm["cache_ttl_days"]
-        cache_path = _llm_cache_path(subject, model, lang, kind)
+        # The task is part of the cache key: the same command under a different
+        # request deserves a different answer.
+        cache_path = _llm_cache_path(subject, model, lang, kind, task)
         cached = _cache_lookup(cache_path, ttl_days)
         if cached is not None:
             return _one_line(cached) or None
@@ -689,7 +777,8 @@ def tier2_explanation(subject, config, kind="bash"):
             return None
         timeout = llm["timeout_seconds"]
         text = _run_with_deadline(
-            lambda: _post_messages_api(subject, model, lang, kind, credential, timeout),
+            lambda: _post_messages_api(subject, model, lang, kind, credential,
+                                       timeout, task),
             timeout,
         )
         text = _one_line(text or "")
@@ -724,19 +813,29 @@ def _resolve_credential(llm):
     return None
 
 
-def _post_messages_api(subject, model, lang, kind, credential, timeout):
+def _post_messages_api(subject, model, lang, kind, credential, timeout, task=""):
     # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
     import urllib.request
 
     system = ui_text(load_locale(lang), kind, "", section="llm_prompts") or ui_text(
         load_locale(BASE_LANG), "bash", "", section="llm_prompts")
     # PRIVACY INVARIANT: the request body is a static system prompt plus the
-    # subject string, nothing else. No cwd, session_id, or transcript content.
+    # subject string — and, ONLY when llm.send_task_context is on, the
+    # developer's current request. Never cwd, session id, or transcript beyond
+    # that one line.
+    if task:
+        system += " " + (ui_text(load_locale(lang), "task_suffix", "", section="llm_prompts")
+                         or ui_text(load_locale(BASE_LANG), "task_suffix", "",
+                                    section="llm_prompts"))
+        content = (f"<user_request>\n{task}\n</user_request>\n"
+                   f"<operation>\n{subject}\n</operation>")
+    else:
+        content = subject
     body = json.dumps({
         "model": model,
         "max_tokens": LLM_MAX_TOKENS,
         "system": system,
-        "messages": [{"role": "user", "content": subject}],
+        "messages": [{"role": "user", "content": content}],
     }).encode("utf-8")
     headers = {
         "content-type": "application/json",
@@ -784,8 +883,9 @@ def _cache_dir():
     return Path(os.path.expanduser(os.environ.get(CACHE_DIR_ENV) or DEFAULT_CACHE_DIR))
 
 
-def _llm_cache_path(subject, model, lang, kind="bash"):
-    digest = hashlib.sha256(f"{model}\n{lang}\n{kind}\n{subject}".encode("utf-8")).hexdigest()
+def _llm_cache_path(subject, model, lang, kind="bash", task=""):
+    digest = hashlib.sha256(
+        f"{model}\n{lang}\n{kind}\n{task}\n{subject}".encode("utf-8")).hexdigest()
     return _cache_dir() / "llm" / f"{digest}.json"
 
 
@@ -836,6 +936,49 @@ def _cache_store(path, text):
 # the notification path (rare, and already paying for an osascript subprocess).
 _TITLE_KEYS = (("custom-title", "customTitle"), ("ai-title", "aiTitle"))
 _TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024  # cap the scan on very long sessions
+# The transcript also records the developer's current request as its own line
+# (verified 2026-07-19). Used ONLY when llm.send_task_context is on.
+_TASK_KEY = ("last-prompt", "lastPrompt")
+TASK_CONTEXT_MAX_CHARS = 400
+
+
+def _scan_transcript(path, wanted):
+    """Latest value of each wanted (line type -> field) pair. Best effort."""
+    found = {}
+    try:
+        size = os.path.getsize(path)
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            if size > _TRANSCRIPT_TAIL_BYTES:
+                fh.seek(size - _TRANSCRIPT_TAIL_BYTES)
+                fh.readline()  # discard the partial line
+            for line in fh:
+                # Cheap pre-filter: these lines are a tiny fraction of a transcript.
+                if not any(f'"{kind}"' in line for kind, _ in wanted):
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                for kind, key in wanted:
+                    if entry.get("type") == kind and isinstance(entry.get(key), str):
+                        found[kind] = entry[key].strip()
+    except Exception:
+        pass
+    return found
+
+
+def task_context(event, max_chars=TASK_CONTEXT_MAX_CHARS):
+    """The developer's current request, or "" — gated by llm.send_task_context.
+
+    This is the only place the plugin reads what the human actually typed, and
+    it leaves the machine only when that setting is explicitly on.
+    """
+    path = (event or {}).get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return ""
+    text = _scan_transcript(path, (_TASK_KEY,)).get(_TASK_KEY[0], "")
+    text = _one_line(text)
+    return text[:max_chars - 1] + "…" if len(text) > max_chars else text
 
 
 def session_label(event):
@@ -844,27 +987,9 @@ def session_label(event):
         found = {}
         path = event.get("transcript_path")
         if isinstance(path, str) and path:
-            # Its own guard: an unreadable transcript must still fall back to
-            # the folder name rather than losing the label entirely.
-            try:
-                size = os.path.getsize(path)
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                    if size > _TRANSCRIPT_TAIL_BYTES:
-                        fh.seek(size - _TRANSCRIPT_TAIL_BYTES)
-                        fh.readline()  # discard the partial line
-                    for line in fh:
-                        # Cheap pre-filter: title lines are a tiny fraction of a transcript.
-                        if '-title"' not in line:
-                            continue
-                        try:
-                            entry = json.loads(line)
-                        except Exception:
-                            continue
-                        for kind, key in _TITLE_KEYS:
-                            if entry.get("type") == kind and isinstance(entry.get(key), str):
-                                found[kind] = entry[key].strip()
-            except Exception:
-                pass
+            # _scan_transcript swallows its own errors, so an unreadable
+            # transcript still falls through to the folder-name fallback.
+            found = _scan_transcript(path, _TITLE_KEYS)
         # A user-set title wins over the generated one, whichever came last.
         for kind, _ in _TITLE_KEYS:
             if found.get(kind):
@@ -1091,12 +1216,15 @@ def build_message(event, config=None):
     if not asked:
         return None
     # Tier 2 runs only for calls we're actually going to put on a dialog.
-    llm_text = tier2_explanation(subject, config, kind)
+    llm_text = tier2_explanation(subject, config, kind, event)
+    # notify_subject is the small, clean subject (command / URL / path) — never
+    # file contents, so the detail can't leak a file body onto the dialog.
     return render_reason(
         matches,
         lang=config["lang"],
         max_chars=config["max_message_chars"],
         llm_text=llm_text,
+        detail=extract_detail(matches[0], None, notify_subject),
     )
 
 
