@@ -1,0 +1,233 @@
+# Permission Lens — Français locale (fr)
+#
+# Machine-translated from en.yaml; review by a native French speaker is welcome
+# (open a PR — wording fixes are easy to merge and always appreciated).
+#
+# Every user-visible string lives here. `en.yaml` is the base: any key missing
+# from this locale falls back to the English one, so a partial translation
+# degrades per-string instead of breaking.
+#
+# Sections:
+#   rules        keyed by rule id (see hooks/rules*.yaml for the matching logic)
+#                explanation = short jargon-free phrase (notifications, extra
+#                              risks appended to a dialog reason)
+#                risk        = ONE self-contained plain-language sentence: what
+#                              the call does AND why it matters. This is the
+#                              dialog headline; it must make sense alone, to a
+#                              reader who won't look anything up. No shell
+#                              jargon (pipe, process substitution, block
+#                              device…) — name the consequence concretely.
+#   ui           severity labels and the verbs used to build neutral summaries
+#   verbs        "what this command does" phrases, keyed by command name
+#   llm_prompts  Tier 2 system prompts (must instruct the model to answer in
+#                this language, in plain words, 1-2 sentences, no markdown)
+#   status       strings for scripts/lens-status.py
+#
+# Rule ids, verb keys and section names are lookup keys — never translate them.
+# The {placeholders} in `status` must stay exactly as they are.
+
+locale: fr
+name: Français
+rules:
+  rm-rf-risky-target:
+    explanation: "Supprime toute une arborescence à un chemin variable ou générique"
+    risk: "Cette commande supprime tout ce qui se trouve sous un chemin construit à partir d'une variable ou d'un caractère générique — si ce chemin ne désigne pas ce que vous croyez, bien plus de fichiers que prévu peuvent disparaître, sans passer par la corbeille."
+  rm-rf-plain:
+    explanation: "Supprime définitivement un dossier et son contenu"
+    risk: "Cette commande supprime définitivement un dossier et tout ce qu'il contient — rien ne va à la corbeille et il n'y a aucun retour en arrière possible."
+  dd-to-device:
+    explanation: "Écrit des données brutes directement sur un disque"
+    risk: "Cette commande écrit des données brutes directement sur un disque — une seule erreur de cible et tout un disque ou une partition est écrasé sans récupération possible."
+  mkfs:
+    explanation: "Formate un support de stockage"
+    risk: "Cette commande formate un support de stockage — tout ce qui s'y trouve actuellement est effacé."
+  shred:
+    explanation: "Efface des fichiers sans récupération possible"
+    risk: "Cette commande réécrit par-dessus les fichiers précisément pour qu'ils ne puissent jamais être récupérés — même les outils de récupération ne les retrouveront pas."
+  chmod-chown-recursive:
+    explanation: "Change les droits d'accès de toute une arborescence"
+    risk: "Cette commande change d'un seul coup qui peut accéder à chacun des fichiers d'une arborescence — si elle vise le mauvais chemin, elle peut vous priver, vous ou le système, de l'accès à quantité de fichiers à la fois."
+  chmod-world-writable:
+    explanation: "Ouvre les fichiers en modification à tous les utilisateurs"
+    risk: "Cette commande autorise tous les utilisateurs de la machine à modifier ces fichiers — tout ce qui les exécutera ensuite peut avoir été altéré au préalable."
+  pipe-to-shell:
+    explanation: "Télécharge un script et l'exécute aussitôt"
+    risk: "Cette commande télécharge un script et l'exécute immédiatement — vous ne voyez jamais le code, et le site peut très bien renvoyer autre chose que ce qui a été relu."
+  shell-from-process-sub:
+    explanation: "Exécute aussitôt du code fraîchement téléchargé"
+    risk: "Cette commande exécute du code récupéré sur Internet dès qu'il arrive, sans laisser à personne l'occasion de le lire d'abord."
+  curl-pipe-interpreter:
+    explanation: "Télécharge du code et l'exécute dans un interpréteur"
+    risk: "Cette commande télécharge du code et l'envoie directement à Python, Node ou équivalent — il s'exécute avant que quiconque ait pu vérifier ce qu'il fait."
+  curl-upload-file:
+    explanation: "Envoie un fichier local vers un serveur"
+    risk: "Cette commande envoie un fichier de cette machine vers un serveur distant — s'il contient des clés ou des données privées, elles quittent votre ordinateur définitivement."
+  file-piped-to-network:
+    explanation: "Envoie le contenu d'un fichier sur le réseau"
+    risk: "Cette commande fait sortir le contenu d'un fichier local sur le réseau — c'est la façon classique dont des données, secrets compris, quittent discrètement la machine."
+  netcat-outbound:
+    explanation: "Envoie un fichier par une connexion brute"
+    risk: "Cette commande envoie un fichier local par une connexion réseau brute — sans chiffrement, sans trace, directement hors de la machine."
+  ssh-key-access:
+    explanation: "Touche à vos clés de connexion SSH"
+    risk: "Cette commande touche à vos clés SSH — quiconque les détient peut se connecter à vos serveurs à votre place, vérifiez donc où la commande les copie ou les envoie."
+  aws-creds-access:
+    explanation: "Lit vos identifiants cloud AWS"
+    risk: "Cette commande lit vos identifiants AWS — avec eux, quelqu'un peut piloter vos ressources cloud et faire grimper la facture, vérifiez donc où ils atterrissent."
+  dotenv-access:
+    explanation: "Lit un fichier de secrets .env"
+    risk: "Cette commande lit un fichier .env, qui contient généralement des clés d'API et des mots de passe — mieux vaut vérifier où la commande envoie ce qu'elle y lit."
+  macos-keychain-dump:
+    explanation: "Extrait les mots de passe enregistrés du Trousseau"
+    risk: "Cette commande extrait en clair les mots de passe enregistrés dans le Trousseau de votre Mac — tout ce qui y est stocké peut être copié."
+  linux-keyring-access:
+    explanation: "Lit les mots de passe enregistrés du trousseau"
+    risk: "Cette commande lit les mots de passe enregistrés dans le trousseau du bureau — les identifiants qui y sont stockés peuvent être copiés."
+  shell-history-access:
+    explanation: "Lit votre historique de commandes"
+    risk: "Cette commande lit votre historique de commandes, qui contient souvent des mots de passe, des jetons et des noms de serveurs que vous avez tapés auparavant."
+  base64-decode-exec:
+    explanation: "Exécute du code caché dans du texte base64"
+    risk: "Cette commande décode du texte masqué (base64) et l'exécute comme du code — cet encodage existe précisément pour vous empêcher de voir ce qui va réellement s'exécuter."
+  hex-decode-exec:
+    explanation: "Exécute du code caché dans du texte hexadécimal"
+    risk: "Cette commande décode du texte masqué (hexadécimal) et l'exécute comme du code — lire la commande ne vous apprend rien sur ce qui va réellement s'exécuter."
+  eval-dynamic:
+    explanation: "Exécute une commande construite dynamiquement"
+    risk: "Cette commande fabrique un texte au moment de son exécution puis le lance comme commande — ce que vous voyez ici n'est pas ce qui sera réellement exécuté."
+  sudo:
+    explanation: "S'exécute avec les droits administrateur"
+    risk: "Cette commande s'exécute avec les droits administrateur (root) — une erreur ici ne se limite pas à vos fichiers, elle peut toucher tout le système."
+  su-switch-user:
+    explanation: "Bascule sur un autre compte utilisateur"
+    risk: "Cette commande bascule sur un autre compte utilisateur, souvent root — tout ce qui suit s'exécute en tant que cet utilisateur, et non en tant que vous."
+  git-push-force:
+    explanation: "Écrase l'historique git distant"
+    risk: "Cette commande écrase l'historique du dépôt distant — des commits poussés par d'autres personnes peuvent être définitivement perdus."
+  git-reset-hard:
+    explanation: "Abandonne toutes les modifications non validées"
+    risk: "Cette commande jette toutes vos modifications non validées — le travail qui n'a pas encore été commité est perdu, sans retour possible."
+  git-clean-force:
+    explanation: "Supprime les fichiers locaux non suivis"
+    risk: "Cette commande supprime les fichiers que git ne suit pas — souvent des notes et des réglages locaux qui n'existent nulle part ailleurs, irrécupérables une fois effacés."
+  git-remote-change:
+    explanation: "Change la destination des envois du dépôt"
+    risk: "Cette commande change le serveur vers lequel le dépôt envoie son code — les prochains envois pourraient partir discrètement vers un autre endroit, éventuellement malveillant."
+  npm-publish:
+    explanation: "Publie un paquet publiquement sur npm"
+    risk: "Cette commande publie un paquet sur npm, à la vue du monde entier — une fois sortie, une version ne peut plus vraiment être retirée."
+  pypi-upload:
+    explanation: "Publie un paquet publiquement sur PyPI"
+    risk: "Cette commande publie un paquet sur PyPI — la version est publique et son numéro ne pourra plus jamais être réutilisé."
+  iac-destroy:
+    explanation: "Détruit une infrastructure cloud en service"
+    risk: "Cette commande détruit une infrastructure cloud en service, bases de données comprises — ce qu'elle supprime est en général perdu pour de bon."
+  cloud-cli-delete:
+    explanation: "Supprime une ressource cloud"
+    risk: "Cette commande supprime un élément de votre compte cloud — les suppressions dans le cloud sont souvent irréversibles et peuvent emporter des données avec elles."
+  crontab-modify:
+    explanation: "Programme des commandes à exécution automatique"
+    risk: "Cette commande met en place des commandes qui s'exécuteront automatiquement à heure fixe — elles continueront de tourner en arrière-plan bien après la fin de cette session."
+  systemd-service:
+    explanation: "Modifie un service système en arrière-plan"
+    risk: "Cette commande modifie un service système qui tourne en arrière-plan — une fois activé, un service se relance tout seul à chaque démarrage de la machine, sans rien redemander."
+  launchd-modify:
+    explanation: "Enregistre un programme en démarrage automatique"
+    risk: "Cette commande enregistre un programme pour qu'il se lance automatiquement à l'ouverture de session ou au démarrage — il continuera de démarrer sans jamais rien redemander."
+  shell-rc-append:
+    explanation: "Ajoute du code à votre fichier de démarrage du shell"
+    risk: "Cette commande ajoute du code à votre fichier de démarrage du shell, qui s'exécutera donc à chaque ouverture d'un terminal — un endroit idéal pour dissimuler quelque chose de durable."
+  web-userinfo:
+    explanation: "L'URL contient un identifiant et un mot de passe"
+    risk: "Cette adresse contient un identifiant et un mot de passe écrits en clair — chaque journal et chaque historique traversés par la requête les enregistreront, et ils peuvent fuiter."
+  web-secret-in-query:
+    explanation: "L'URL transporte un secret dans ses paramètres"
+    risk: "Cette adresse transporte une clé, un jeton ou un mot de passe dans ses paramètres — les serveurs et les relais enregistrent les URL, donc le secret se retrouve consigné en chemin."
+  web-ip-or-localhost:
+    explanation: "Interroge une adresse IP brute ou votre machine"
+    risk: "Cette requête vise une adresse IP brute ou votre propre machine plutôt qu'un site web normal — un procédé souvent utilisé pour sonder votre ordinateur ou votre réseau privé."
+  web-script-host:
+    explanation: "Interroge un site de scripts ou de liens raccourcis"
+    risk: "Cette requête vise un site qui sert surtout des scripts bruts ou des liens raccourcis — mieux vaut regarder ce qui revient réellement avant de s'en servir."
+  web-insecure-http:
+    explanation: "Requête en HTTP non chiffré"
+    risk: "Cette requête passe en HTTP simple, non chiffré — n'importe qui sur le trajet réseau peut lire, voire modifier, ce qui revient."
+  path-ssh:
+    explanation: "Écrit dans votre dossier de clés SSH"
+    risk: "Cette opération écrit dans votre dossier ~/.ssh, là où se trouvent vos clés de connexion aux serveurs — une modification ici peut donner ou détourner l'accès à vos serveurs."
+  path-aws:
+    explanation: "Écrit dans votre dossier d'identifiants AWS"
+    risk: "Cette opération écrit dans votre dossier ~/.aws, là où se trouvent vos clés d'accès au cloud — une modification ici peut livrer le contrôle de votre compte cloud."
+  path-dotenv:
+    explanation: "Écrit un fichier de secrets .env"
+    risk: "Cette opération écrit un fichier .env, qui contient généralement des clés d'API et des mots de passe — mieux vaut lire exactement ce qui va y être inscrit."
+  path-shell-rc:
+    explanation: "Écrit votre fichier de démarrage du shell"
+    risk: "Cette opération écrit votre fichier de démarrage du shell — tout ce qui s'y retrouve s'exécutera désormais à chaque ouverture d'un terminal."
+  path-git-hooks:
+    explanation: "Écrit un hook git à exécution automatique"
+    risk: "Cette opération écrit un hook git — un script qui s'exécutera désormais tout seul à chaque commit ou à chaque envoi, avec tous vos droits."
+  path-ci-workflow:
+    explanation: "Écrit un fichier de workflow CI"
+    risk: "Cette opération écrit un workflow CI — il s'exécutera au prochain envoi et pourra accéder aux secrets stockés de votre dépôt."
+  path-launch-agent:
+    explanation: "Écrit une entrée de démarrage automatique macOS"
+    risk: "Cette opération écrit une entrée de démarrage automatique macOS — le programme visé se lancera désormais tout seul à chaque ouverture de session ou démarrage."
+  path-cron:
+    explanation: "Écrit une tâche planifiée"
+    risk: "Cette opération écrit une tâche planifiée — ses commandes s'exécuteront désormais automatiquement à heure fixe, sans surveillance."
+  path-sudoers:
+    explanation: "Écrit le fichier des droits administrateur"
+    risk: "Cette opération écrit le fichier sudoers, celui qui décide qui obtient les droits administrateur sur cette machine — une modification ici peut accorder un accès root permanent."
+  path-etc:
+    explanation: "Écrit des réglages valables pour tout le système (/etc)"
+    risk: "Cette opération écrit dans /etc, la zone des réglages valables pour tout le système — ce qui y change touche tous les utilisateurs et tous les programmes de la machine."
+  content-remote-exec:
+    explanation: "Le contenu écrit télécharge et exécute du code"
+    risk: "Le texte en cours d'écriture contient une instruction qui télécharge puis exécute du code — chaque fois que ce fichier sera lancé, il ira chercher du code sur Internet et l'exécutera sans relecture."
+ui:
+  severity_high: ÉLEVÉ
+  severity_medium: MOYEN
+  severity_low: FAIBLE
+  fallback_summary: Exécute une commande shell
+  runs: Exécute
+  fetches: Récupère
+  writes: Écrit
+  edits: Modifie
+verbs:
+  ls: Liste le contenu d'un dossier
+  cat: Affiche le contenu d'un fichier
+  cd: Change de dossier de travail
+  cp: Copie des fichiers
+  mv: Déplace ou renomme des fichiers
+  mkdir: Crée un dossier
+  touch: Crée un fichier ou met à jour sa date
+  echo: Affiche du texte
+  grep: Recherche du texte
+  rg: Recherche du texte (ripgrep)
+  find: Recherche dans les fichiers du disque
+  sed: Modifie un flux de texte
+  awk: Traite du texte
+  python: Exécute un programme Python
+  python3: Exécute un programme Python
+  node: Exécute un programme Node.js
+  make: Exécute une cible make
+  brew: Exécute une commande Homebrew
+  docker: Exécute une commande Docker
+  kubectl: Exécute une commande kubectl
+llm_prompts:
+  bash: "Vous expliquez des commandes shell affichées dans une boîte de dialogue d'autorisation. Le message utilisateur est exactement une commande shell. Répondez en français, en 1 à 2 courtes phrases de texte brut compréhensibles par un non-expert, en indiquant ce que fait la commande et tout risque notable. Des mots simples plutôt que du jargon. Pas de markdown, pas de préambule, pas de bloc de code."
+  url: "Vous expliquez une récupération web affichée dans une boîte de dialogue d'autorisation. Le message utilisateur est exactement une URL qu'un agent de code s'apprête à récupérer. Répondez en français, en 1 à 2 courtes phrases de texte brut, en indiquant ce que cette récupération va faire et tout risque notable (hôte non fiable, identifiants ou secrets dans l'URL, cible interne ou pointant vers la machine elle-même). Pas de markdown, pas de préambule."
+  path: "Vous expliquez une écriture ou une modification de fichier affichée dans une boîte de dialogue d'autorisation. Le message utilisateur est le CHEMIN du fichier cible qu'un agent de code s'apprête à écrire ou à modifier, éventuellement suivi, après une ligne vide, du nouveau contenu. Répondez en français, en 1 à 2 courtes phrases de texte brut, en indiquant ce qu'est ce fichier ou cet emplacement et tout risque notable lié à sa modification. Pas de markdown, pas de préambule."
+status:
+  none: "aucune correspondance"
+  asked: "dialogue forcé"
+  silent: "silencieux"
+  last: "dernière vérification {age} ({tool} · {what})"
+  today: "aujourd'hui : {total} vérifiés · 🔴 {high} · 🟡 {medium} · 🟢 {low} · aucune correspondance {none} · dialogues forcés {asked}"
+  empty: "aucune invocation enregistrée pour l'instant — lancez d'abord un Bash/WebFetch/Write/Edit dans une session où le plugin est activé (heartbeat : {path})"
+  stale_day: "(les compteurs datent du {day}, pas d'aujourd'hui)"
+  s: "il y a {n} s"
+  m: "il y a {n} min"
+  h: "il y a {n} h"
+  d: "il y a {n} j"

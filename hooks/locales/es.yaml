@@ -1,0 +1,235 @@
+# Permission Lens — Español locale (es)
+#
+# Traducción automática: se agradecen las revisiones y correcciones de
+# hablantes nativos.
+#
+# Aquí vive cada cadena visible para el usuario. `en.yaml` es la base: toda
+# clave que falte en otro idioma recurre a la inglesa, así que una traducción
+# parcial se degrada cadena a cadena en lugar de romperse.
+#
+# Secciones:
+#   rules        indexadas por id de regla (la lógica de coincidencia está en
+#                hooks/rules*.yaml)
+#                explanation = frase corta y sin jerga (notificaciones, riesgos
+#                              adicionales añadidos al motivo del diálogo)
+#                risk        = UNA frase autónoma en lenguaje llano: qué hace la
+#                              llamada Y por qué importa. Es el titular del
+#                              diálogo; tiene que entenderse sola, para alguien
+#                              que no va a consultar nada más. Nada de jerga de
+#                              shell (tubería, sustitución de procesos,
+#                              dispositivo de bloques…) — nombra la consecuencia
+#                              de forma concreta.
+#   ui           etiquetas de gravedad y los verbos con que se arman los
+#                resúmenes neutros
+#   verbs        frases de "qué hace este comando", indexadas por nombre de
+#                comando
+#   llm_prompts  prompts de sistema del Tier 2 (deben indicar al modelo que
+#                responda en este idioma, en palabras llanas, 1-2 frases, sin
+#                markdown)
+#   status       cadenas para scripts/lens-status.py
+
+locale: es
+name: Español
+rules:
+  rm-rf-risky-target:
+    explanation: Borra un árbol de carpetas entero en una ruta con variable o comodín
+    risk: Esto borra todo lo que haya bajo una ruta construida a partir de una variable o un comodín — si esa ruta resulta ser distinta de la esperada, puede desaparecer mucho más de lo previsto, y nada va a la papelera.
+  rm-rf-plain:
+    explanation: Borra una carpeta y todo su contenido de forma permanente
+    risk: Esto borra de forma permanente una carpeta y todo lo que hay dentro — nada va a la papelera y no hay forma de deshacerlo.
+  dd-to-device:
+    explanation: Escribe datos en bruto directamente sobre un disco
+    risk: Esto escribe datos en bruto directamente sobre un disco — si el destino es el equivocado, un disco o una partición entera queda sobrescrita sin posibilidad de recuperarla.
+  mkfs:
+    explanation: Formatea una unidad de almacenamiento
+    risk: Esto formatea una unidad de almacenamiento — todo lo que haya guardado en ella se borra.
+  shred:
+    explanation: Destruye archivos sin posibilidad de recuperarlos
+    risk: Esto sobrescribe los archivos precisamente para que nunca puedan recuperarse — ni siquiera las herramientas de recuperación los devuelven.
+  chmod-chown-recursive:
+    explanation: Cambia los permisos de todo un árbol de carpetas
+    risk: Esto cambia de una sola vez quién puede acceder a cada archivo de una carpeta y de todas sus subcarpetas — si apunta a la ruta equivocada, puede dejarte a ti o al sistema sin acceso a muchos archivos de golpe.
+  chmod-world-writable:
+    explanation: Permite que cualquier usuario modifique los archivos
+    risk: Esto permite que cualquier usuario de la máquina modifique estos archivos — lo que los ejecute más tarde puede haber sido manipulado antes.
+  pipe-to-shell:
+    explanation: Descarga un script y lo ejecuta de inmediato
+    risk: Esto descarga un script y lo ejecuta de inmediato — nunca llegas a ver el código, y el sitio podría entregar algo distinto de lo que alguien revisó.
+  shell-from-process-sub:
+    explanation: Ejecuta al instante código recién descargado
+    risk: Esto ejecuta código traído de internet en el mismo momento en que llega, sin que nadie tenga ocasión de leerlo antes.
+  curl-pipe-interpreter:
+    explanation: Descarga código y lo ejecuta en un intérprete
+    risk: Esto descarga código y se lo entrega directamente a Python, Node u otro intérprete — se ejecuta antes de que nadie pueda comprobar qué hace.
+  curl-upload-file:
+    explanation: Sube un archivo local a un servidor
+    risk: Esto envía un archivo de esta máquina a un servidor remoto — si contiene claves o datos privados, salen de tu computadora para siempre.
+  file-piped-to-network:
+    explanation: Envía el contenido de un archivo por la red
+    risk: Esto envía el contenido de un archivo local por la red — una forma clásica de que los datos, secretos incluidos, salgan de la máquina sin hacer ruido.
+  netcat-outbound:
+    explanation: Envía un archivo por una conexión directa
+    risk: Esto envía un archivo local por una conexión de red directa — sin cifrado, sin registro y fuera de la máquina.
+  ssh-key-access:
+    explanation: Accede a tus claves de acceso SSH
+    risk: Esto accede a tus claves SSH — quien las tenga puede entrar en tus servidores haciéndose pasar por ti, así que revisa a dónde las copia o las envía el comando.
+  aws-creds-access:
+    explanation: Lee tus credenciales de AWS
+    risk: Esto lee tus credenciales de AWS — con ellas alguien puede controlar tus recursos en la nube y generar gastos, así que revisa dónde acaban.
+  dotenv-access:
+    explanation: Lee un archivo de secretos .env
+    risk: Esto lee un archivo .env, que suele contener claves de API y contraseñas — conviene revisar a dónde envía el comando lo que ha leído.
+  macos-keychain-dump:
+    explanation: Extrae contraseñas guardadas del Llavero
+    risk: Esto saca en texto legible las contraseñas guardadas en el Llavero de tu Mac — todo lo que hay ahí se puede copiar.
+  linux-keyring-access:
+    explanation: Lee contraseñas guardadas del keyring
+    risk: Esto lee las contraseñas guardadas en el keyring del escritorio — las credenciales que hay ahí se pueden copiar.
+  shell-history-access:
+    explanation: Lee tu historial de comandos
+    risk: Esto lee tu historial de comandos, que a menudo contiene contraseñas, tokens y nombres de servidores que has escrito antes.
+  base64-decode-exec:
+    explanation: Ejecuta código oculto en texto base64
+    risk: Esto decodifica un texto oculto en base64 y lo ejecuta como código — esa codificación existe justamente para que no puedas ver qué se va a ejecutar.
+  hex-decode-exec:
+    explanation: Ejecuta código oculto en texto hexadecimal
+    risk: Esto decodifica un texto oculto en hexadecimal y lo ejecuta como código — leer el comando no te dice nada sobre lo que realmente se va a ejecutar.
+  eval-dynamic:
+    explanation: Ejecuta un comando construido sobre la marcha
+    risk: Esto arma un texto en el momento de ejecutarse y lo lanza como comando — lo que ves aquí no es el comando que realmente se va a ejecutar.
+  sudo:
+    explanation: Se ejecuta con permisos de administrador
+    risk: Esto se ejecuta con permisos de administrador (root) — un error aquí no se limita a tus archivos, puede afectar a todo el sistema.
+  su-switch-user:
+    explanation: Cambia a otra cuenta de usuario
+    risk: Esto cambia a otra cuenta de usuario, a menudo root — todo lo que venga después se ejecuta como ese usuario, no como tú.
+  git-push-force:
+    explanation: Sobrescribe el historial remoto de git
+    risk: Esto sobrescribe el historial del repositorio remoto — los commits que hayan subido otras personas pueden perderse de forma permanente.
+  git-reset-hard:
+    explanation: Descarta todos los cambios sin confirmar
+    risk: Esto tira a la basura todos tus cambios sin confirmar — el trabajo que aún no está en un commit desaparece, sin vuelta atrás.
+  git-clean-force:
+    explanation: Borra archivos locales sin seguimiento
+    risk: Esto borra los archivos que git no está siguiendo — suelen ser notas y configuraciones locales que no existen en ningún otro sitio, irrecuperables una vez borradas.
+  git-remote-change:
+    explanation: Cambia a dónde sube sus cambios el repo
+    risk: Esto cambia a qué servidor sube sus cambios el repositorio — los próximos envíos podrían ir en silencio a otro sitio, posiblemente malicioso.
+  npm-publish:
+    explanation: Publica un paquete públicamente en npm
+    risk: Esto publica un paquete en npm a la vista de todo el mundo — una vez fuera, en la práctica una versión ya no se puede retirar.
+  pypi-upload:
+    explanation: Publica un paquete públicamente en PyPI
+    risk: Esto publica un paquete en PyPI — la publicación es pública y ese número de versión nunca se podrá reutilizar.
+  iac-destroy:
+    explanation: Destruye infraestructura en la nube en uso
+    risk: Esto destruye infraestructura en la nube que está en funcionamiento, bases de datos incluidas — lo que elimina suele perderse para siempre.
+  cloud-cli-delete:
+    explanation: Elimina un recurso en la nube
+    risk: Esto elimina algo de tu cuenta en la nube — estas eliminaciones a menudo no se pueden deshacer y pueden llevarse datos por delante.
+  crontab-modify:
+    explanation: Programa comandos para que se ejecuten solos
+    risk: Esto deja programados comandos para que se ejecuten solos cada cierto tiempo — seguirán ejecutándose en segundo plano mucho después de que termine esta sesión.
+  systemd-service:
+    explanation: Modifica un servicio del sistema en segundo plano
+    risk: Esto modifica un servicio del sistema que corre en segundo plano — si queda activado, se inicia solo cada vez que arranca la máquina, sin volver a preguntar.
+  launchd-modify:
+    explanation: Registra un programa para que se inicie solo
+    risk: Esto registra un programa para que se inicie automáticamente al iniciar sesión o al arrancar — a partir de ahí seguirá ejecutándose sin volver a preguntar.
+  shell-rc-append:
+    explanation: Añade código a tu archivo de inicio de la shell
+    risk: Esto añade código a tu archivo de inicio de la shell, así que se ejecuta cada vez que abres una terminal — un sitio muy fácil para esconder algo que se queda para siempre.
+  web-userinfo:
+    explanation: La URL contiene un usuario y una contraseña
+    risk: Esta URL lleva un usuario y una contraseña escritos dentro — todos los registros e historiales por los que pase la petición los van a guardar, y pueden filtrarse.
+  web-secret-in-query:
+    explanation: La URL lleva un secreto en sus parámetros
+    risk: Esta URL lleva una clave, un token o una contraseña en sus parámetros — los servidores y los proxies guardan las URLs, así que el secreto queda anotado por el camino.
+  web-ip-or-localhost:
+    explanation: Accede a una IP directa o a tu propia máquina
+    risk: Esto se conecta a una dirección IP directa o a tu propia máquina en lugar de a un sitio web normal — un patrón habitual para sondear tu computadora o tu red privada.
+  web-script-host:
+    explanation: Descarga de un sitio de scripts o enlaces cortos
+    risk: Esto descarga de un sitio que sirve sobre todo scripts sueltos o enlaces acortados — conviene mirar qué llega realmente antes de usarlo.
+  web-insecure-http:
+    explanation: Descarga por HTTP sin cifrar
+    risk: Esto descarga por HTTP sin cifrar — cualquiera que esté en el camino de la red puede leer o incluso alterar lo que llega.
+  path-ssh:
+    explanation: Escribe en tu carpeta de claves SSH
+    risk: Esto escribe en tu carpeta ~/.ssh, donde están las claves con las que entras a tus servidores — un cambio ahí puede repartir o desviar el acceso a esos servidores.
+  path-aws:
+    explanation: Escribe en tu carpeta de credenciales de AWS
+    risk: Esto escribe en tu carpeta ~/.aws, donde están tus claves de acceso a la nube — un cambio ahí puede entregar el control de tu cuenta en la nube.
+  path-dotenv:
+    explanation: Escribe un archivo de secretos .env
+    risk: Esto escribe un archivo .env, que suele contener claves de API y contraseñas — conviene leer exactamente qué se está escribiendo dentro.
+  path-shell-rc:
+    explanation: Escribe tu archivo de inicio de la shell
+    risk: Esto escribe tu archivo de inicio de la shell — lo que acabe ahí se ejecutará cada vez que abras una terminal a partir de ahora.
+  path-git-hooks:
+    explanation: Escribe un hook de git que se ejecuta solo
+    risk: Esto escribe un hook de git — un script que a partir de ahora se ejecuta solo en cada commit o cada push, con todos tus permisos.
+  path-ci-workflow:
+    explanation: Escribe un archivo de flujo de CI
+    risk: Esto escribe un flujo de CI — se ejecutará en el próximo push y puede llegar a los secretos guardados de tu repositorio.
+  path-launch-agent:
+    explanation: Escribe un arranque automático de macOS
+    risk: Esto escribe una entrada de arranque automático de macOS — el programa al que apunta se iniciará solo en cada inicio de sesión o cada arranque a partir de ahora.
+  path-cron:
+    explanation: Escribe una tarea programada
+    risk: Esto escribe una tarea programada — sus comandos se ejecutarán solos cada cierto tiempo a partir de ahora, sin que nadie los vigile.
+  path-sudoers:
+    explanation: Escribe el archivo de permisos de administrador
+    risk: Esto escribe el archivo sudoers, que decide quién tiene permisos de administrador en esta máquina — un cambio ahí puede conceder acceso root permanente.
+  path-etc:
+    explanation: Escribe la configuración de todo el sistema (/etc)
+    risk: Esto escribe en /etc, la zona de configuración de todo el sistema — los cambios ahí afectan a todos los usuarios y programas de la máquina.
+  content-remote-exec:
+    explanation: El contenido escrito descarga y ejecuta código
+    risk: El texto que se va a escribir contiene una orden de descargar y ejecutar código — cada vez que este archivo se ejecute, traerá código de internet y lo lanzará sin que nadie lo haya revisado.
+ui:
+  severity_high: ALTO
+  severity_medium: MEDIO
+  severity_low: BAJO
+  fallback_summary: Ejecuta un comando de shell
+  runs: Ejecuta
+  fetches: Descarga
+  writes: Escribe
+  edits: Edita
+verbs:
+  ls: Lista el contenido de un directorio
+  cat: Muestra el contenido de un archivo
+  cd: Cambia el directorio de trabajo
+  cp: Copia archivos
+  mv: Mueve o renombra archivos
+  mkdir: Crea un directorio
+  touch: Crea un archivo o actualiza su fecha
+  echo: Muestra texto
+  grep: Busca texto
+  rg: Busca texto (ripgrep)
+  find: Busca en el sistema de archivos
+  sed: Edita un flujo de texto
+  awk: Procesa texto
+  python: Ejecuta un programa de Python
+  python3: Ejecuta un programa de Python
+  node: Ejecuta un programa de Node.js
+  make: Ejecuta un objetivo de make
+  brew: Ejecuta un comando de Homebrew
+  docker: Ejecuta un comando de Docker
+  kubectl: Ejecuta un comando de kubectl
+llm_prompts:
+  bash: 'Explicas comandos de shell que aparecen en un diálogo de permisos. El mensaje del usuario es exactamente un comando de shell. Responde en español con 1 o 2 frases cortas de texto plano que una persona no experta pueda seguir: qué hace el comando y cualquier riesgo destacable. Palabras sencillas antes que jerga. Sin markdown, sin preámbulo, sin bloques de código.'
+  url: 'Explicas una descarga web que aparece en un diálogo de permisos. El mensaje del usuario es exactamente una URL que un agente de programación está a punto de descargar. Responde en español con 1 o 2 frases cortas de texto plano: qué supone descargarla y cualquier riesgo destacable (host no fiable, credenciales o secretos dentro de la URL, un destino interno o de loopback). Sin markdown, sin preámbulo.'
+  path: 'Explicas una escritura o edición de archivo que aparece en un diálogo de permisos. El mensaje del usuario es la RUTA del archivo de destino que un agente de programación está a punto de escribir o editar, seguida opcionalmente, tras una línea en blanco, del nuevo contenido. Responde en español con 1 o 2 frases cortas de texto plano: qué es ese archivo o esa ubicación y cualquier riesgo destacable de modificarlo. Sin markdown, sin preámbulo.'
+status:
+  none: sin coincidencias
+  asked: diálogo forzado
+  silent: silencioso
+  last: última revisión {age} ({tool} · {what})
+  today: 'hoy: {total} revisados · 🔴 {high} · 🟡 {medium} · 🟢 {low} · sin coincidencias {none} · diálogos forzados {asked}'
+  empty: 'aún no hay invocaciones registradas — ejecuta cualquier Bash/WebFetch/Write/Edit en una sesión con el plugin activo (heartbeat: {path})'
+  stale_day: (los contadores son del {day}, no de hoy)
+  s: 'hace {n} s'
+  m: 'hace {n} min'
+  h: 'hace {n} h'
+  d: 'hace {n} d'

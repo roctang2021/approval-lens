@@ -1,0 +1,227 @@
+# Permission Lens — English locale (en)
+#
+# Every user-visible string lives here. `en.yaml` is the base: any key missing
+# from another locale falls back to the English one, so a partial translation
+# degrades per-string instead of breaking.
+#
+# Sections:
+#   rules        keyed by rule id (see hooks/rules*.yaml for the matching logic)
+#                explanation = short jargon-free phrase (notifications, extra
+#                              risks appended to a dialog reason)
+#                risk        = ONE self-contained plain-language sentence: what
+#                              the call does AND why it matters. This is the
+#                              dialog headline; it must make sense alone, to a
+#                              reader who won't look anything up. No shell
+#                              jargon (pipe, process substitution, block
+#                              device…) — name the consequence concretely.
+#   ui           severity labels and the verbs used to build neutral summaries
+#   verbs        "what this command does" phrases, keyed by command name
+#   llm_prompts  Tier 2 system prompts (must instruct the model to answer in
+#                this language, in plain words, 1-2 sentences, no markdown)
+#   status       strings for scripts/lens-status.py
+
+locale: en
+name: English
+rules:
+  rm-rf-risky-target:
+    explanation: Deletes a whole directory tree at a variable or wildcard path
+    risk: This deletes everything under a path built from a variable or wildcard — if it expands differently than expected, far more can vanish than intended, with no trash to recover from.
+  rm-rf-plain:
+    explanation: Permanently deletes a folder and its contents
+    risk: This permanently deletes a folder and everything inside it — nothing goes to the trash, and there is no undo.
+  dd-to-device:
+    explanation: Writes raw data directly onto a disk
+    risk: This writes raw data straight onto a disk device — one wrong target and an entire disk or partition is overwritten beyond recovery.
+  mkfs:
+    explanation: Formats a storage device
+    risk: This formats a storage device — everything currently stored on it is erased.
+  shred:
+    explanation: Wipes files beyond recovery
+    risk: This overwrites files specifically so they can never be recovered — even recovery tools won't bring them back.
+  chmod-chown-recursive:
+    explanation: Changes permissions for a whole directory tree
+    risk: This changes who can access every file under a directory tree in one go — pointed at the wrong path, it can lock you or the system out of many files at once.
+  chmod-world-writable:
+    explanation: Opens files to modification by all users
+    risk: This lets every user on the machine modify these files — anything that later runs them can have been tampered with first.
+  pipe-to-shell:
+    explanation: Downloads a script and runs it immediately
+    risk: This downloads a script and runs it immediately — you never see the code, and the site could serve different content than what anyone reviewed.
+  shell-from-process-sub:
+    explanation: Runs freshly downloaded code straight away
+    risk: This runs code fetched from the internet the moment it arrives, with no chance for anyone to read it first.
+  curl-pipe-interpreter:
+    explanation: Downloads code and runs it in an interpreter
+    risk: This downloads code and feeds it straight into Python/Node/etc. — it executes before anyone can check what it does.
+  curl-upload-file:
+    explanation: Uploads a local file to a server
+    risk: This sends a file from this machine to a remote server — if it holds keys or private data, they leave your computer for good.
+  file-piped-to-network:
+    explanation: Sends file contents over the network
+    risk: This streams local file contents out over the network — a classic way data, secrets included, quietly leaves the machine.
+  netcat-outbound:
+    explanation: Sends a file over a raw connection
+    risk: This sends a local file out over a raw network connection — unencrypted, unlogged, straight off the machine.
+  ssh-key-access:
+    explanation: Touches your SSH login keys
+    risk: This touches your SSH keys — whoever holds them can log in to your servers as you, so check where the command copies or sends them.
+  aws-creds-access:
+    explanation: Reads your AWS cloud credentials
+    risk: This reads your AWS credentials — with them, someone can control your cloud resources and run up bills, so check where they end up.
+  dotenv-access:
+    explanation: Reads a .env secrets file
+    risk: This reads a .env file, which usually holds API keys and passwords — worth checking where the command sends what it reads.
+  macos-keychain-dump:
+    explanation: Extracts saved passwords from the Keychain
+    risk: This pulls saved passwords out of your Mac's Keychain in readable form — everything stored there can be copied.
+  linux-keyring-access:
+    explanation: Reads saved passwords from the keyring
+    risk: This reads saved passwords out of the desktop keyring — credentials stored there can be copied.
+  shell-history-access:
+    explanation: Reads your command history
+    risk: This reads your command history, which often contains passwords, tokens, and server names you've typed before.
+  base64-decode-exec:
+    explanation: Runs code hidden in base64 text
+    risk: This decodes hidden (base64) text and runs it as code — the encoding exists precisely so you can't see what will actually run.
+  hex-decode-exec:
+    explanation: Runs code hidden in hex text
+    risk: This decodes hidden (hex) text and runs it as code — reading the command tells you nothing about what will actually run.
+  eval-dynamic:
+    explanation: Executes a dynamically built command
+    risk: This builds a string at runtime and executes it as a command — the text you see here is not the command that will actually run.
+  sudo:
+    explanation: Runs with administrator power
+    risk: This runs with administrator (root) power — a mistake here isn't limited to your files, it can affect the whole system.
+  su-switch-user:
+    explanation: Switches to another user account
+    risk: This switches to another user account, often root — everything after it runs as that user, not you.
+  git-push-force:
+    explanation: Overwrites remote git history
+    risk: This overwrites the history on the remote repository — commits other people pushed can be permanently lost.
+  git-reset-hard:
+    explanation: Discards all uncommitted changes
+    risk: This throws away all your uncommitted changes — work not yet committed is gone, with no way back.
+  git-clean-force:
+    explanation: Deletes untracked local files
+    risk: This deletes files git isn't tracking — often local notes and config that exist nowhere else, unrecoverable once gone.
+  git-remote-change:
+    explanation: Changes where the repo pushes to
+    risk: This changes which server the repository pushes to — future pushes could quietly go to a different, possibly malicious, place.
+  npm-publish:
+    explanation: Publishes a package publicly to npm
+    risk: This publishes a package to npm for the whole world — once out, a version can't practically be taken back.
+  pypi-upload:
+    explanation: Publishes a package publicly to PyPI
+    risk: This publishes a package to PyPI — the release is public and the version number can never be reused.
+  iac-destroy:
+    explanation: Tears down live cloud infrastructure
+    risk: This tears down live cloud infrastructure, databases included — what it destroys is usually gone for good.
+  cloud-cli-delete:
+    explanation: Deletes a cloud resource
+    risk: This deletes something in your cloud account — cloud deletions often can't be undone and may take data with them.
+  crontab-modify:
+    explanation: Schedules commands to run automatically
+    risk: This sets up commands to run automatically on a schedule — they'll keep running in the background long after this session ends.
+  systemd-service:
+    explanation: Changes a background system service
+    risk: This changes a background system service — an enabled service starts itself on every boot without asking again.
+  launchd-modify:
+    explanation: Registers a program to auto-start
+    risk: This registers a program to start automatically at login or boot — it will keep running from then on without asking.
+  shell-rc-append:
+    explanation: Adds code to your shell startup file
+    risk: This adds code to your shell startup file, so it runs every time you open a terminal — an easy place to hide something that persists.
+  web-userinfo:
+    explanation: URL contains a username and password
+    risk: This URL has a username and password written inside it — every log and history the request passes through will record them, and they can leak.
+  web-secret-in-query:
+    explanation: URL carries a secret in its parameters
+    risk: This URL carries a key, token, or password in its parameters — servers and proxies record URLs, so the secret gets written down along the way.
+  web-ip-or-localhost:
+    explanation: Fetches a raw IP or your own machine
+    risk: This fetches from a raw IP address or your own machine instead of a normal website — a pattern often used to probe your computer or private network.
+  web-script-host:
+    explanation: Fetches from a script-hosting or short-link site
+    risk: This fetches from a site that mostly serves raw scripts or shortened links — worth a look at what actually comes back before it gets used.
+  web-insecure-http:
+    explanation: Fetches over unencrypted HTTP
+    risk: This fetches over plain unencrypted HTTP — anyone on the network path can read or even alter what comes back.
+  path-ssh:
+    explanation: Writes into your SSH key folder
+    risk: This writes into your ~/.ssh folder, where your server login keys live — a change here can hand out or redirect access to your servers.
+  path-aws:
+    explanation: Writes into your AWS credentials folder
+    risk: This writes into your ~/.aws folder, where your cloud access keys live — a change here can hand over control of your cloud account.
+  path-dotenv:
+    explanation: Writes a .env secrets file
+    risk: This writes a .env file, which usually holds API keys and passwords — worth reading exactly what is being written into it.
+  path-shell-rc:
+    explanation: Writes your shell startup file
+    risk: This writes your shell startup file — whatever lands in it runs every time you open a terminal from now on.
+  path-git-hooks:
+    explanation: Writes an auto-running git hook
+    risk: This writes a git hook — a script that from now on runs by itself on every commit or push, with your full permissions.
+  path-ci-workflow:
+    explanation: Writes a CI workflow file
+    risk: This writes a CI workflow — it runs on the next push and can reach your repository's stored secrets.
+  path-launch-agent:
+    explanation: Writes a macOS auto-start entry
+    risk: This writes a macOS auto-start entry — the program it points at will launch itself at every login or boot from now on.
+  path-cron:
+    explanation: Writes a scheduled task
+    risk: This writes a scheduled-task entry — its commands will run automatically on a timer from now on, unattended.
+  path-sudoers:
+    explanation: Writes the administrator-rights file
+    risk: This writes the sudoers file, which decides who gets administrator power on this machine — a change here can grant permanent root access.
+  path-etc:
+    explanation: Writes system-wide settings (/etc)
+    risk: This writes into /etc, the system-wide settings area — changes there affect every user and program on the machine.
+  content-remote-exec:
+    explanation: Written content downloads and runs code
+    risk: The text being written contains a download-and-run (or eval) command — whenever this file later runs, it will pull code from the internet and execute it unreviewed.
+ui:
+  severity_high: HIGH
+  severity_medium: MEDIUM
+  severity_low: LOW
+  fallback_summary: Runs a shell command
+  runs: Runs
+  fetches: Fetches
+  writes: Writes
+  edits: Edits
+verbs:
+  ls: Lists directory contents
+  cat: Prints file contents
+  cd: Changes the working directory
+  cp: Copies files
+  mv: Moves or renames files
+  mkdir: Creates a directory
+  touch: Creates or updates a file timestamp
+  echo: Prints text
+  grep: Searches text
+  rg: Searches text (ripgrep)
+  find: Searches the filesystem
+  sed: Edits a text stream
+  awk: Processes text
+  python: Runs a Python program
+  python3: Runs a Python program
+  node: Runs a Node.js program
+  make: Runs a make target
+  brew: Runs a Homebrew command
+  docker: Runs a Docker command
+  kubectl: Runs a kubectl command
+llm_prompts:
+  bash: 'You explain shell commands shown in a permission dialog. The user message is exactly one shell command. Reply with 1-2 short plain-text sentences in English a non-expert can follow: what the command does and any notable risk. Plain words over jargon. No markdown, no preamble, no code blocks.'
+  url: 'You explain a web fetch shown in a permission dialog. The user message is exactly one URL a coding agent is about to fetch. Reply with 1-2 short plain-text sentences in English: what fetching it does and any notable risk (untrusted host, credentials or secrets in the URL, an internal/loopback target). No markdown, no preamble.'
+  path: 'You explain a file write/edit shown in a permission dialog. The user message is the target file PATH a coding agent is about to write or edit, optionally followed after a blank line by the new contents. Reply with 1-2 short plain-text sentences in English: what that file/location is and any notable risk of changing it. No markdown, no preamble.'
+status:
+  none: no match
+  asked: dialog forced
+  silent: silent
+  last: last check {age} ({tool} · {what})
+  today: 'today: {total} checked · 🔴 {high} · 🟡 {medium} · 🟢 {low} · no match {none} · dialogs forced {asked}'
+  empty: 'no invocations recorded yet — run any Bash/WebFetch/Write/Edit in a plugin-enabled session first (heartbeat: {path})'
+  stale_day: (counters are from {day}, not today)
+  s: '{n}s ago'
+  m: '{n} min ago'
+  h: '{n} h ago'
+  d: '{n} d ago'

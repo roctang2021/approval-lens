@@ -165,7 +165,7 @@ hook. Full example: [`config.example.json`](config.example.json).
 
 | Key | Values | Default | Notes |
 | --- | --- | --- | --- |
-| `lang` | `"en"` \| `"zh"` | `"en"` | Language of explanations. |
+| `lang` | any code in [`hooks/locales/`](hooks/locales) | `"en"` | Language of explanations — see [Languages](#languages). |
 | `ask.min_severity` | `"low"` \| `"medium"` \| `"high"` | `"high"` | A rule match at/above this severity forces the dialog with the explanation on it; below it, the plugin prints `{}` and stays invisible. `"info"` is deliberately rejected — it would prompt on every tool call. |
 | `max_message_chars` | 80–9000 | 500 | Hard cap on the explanation length. |
 | `llm.enabled` | `true` \| `false` | `false` | Turns on Tier 2. Must be literal `true`. |
@@ -176,6 +176,31 @@ hook. Full example: [`config.example.json`](config.example.json).
 | `llm.send_file_content` | `true` \| `false` | `false` | Whether Tier 2 may send Write/Edit file *contents* (not just the path) to the model. Off by default. |
 | `notify.enabled` | `true` \| `false` | `false` | Fire a macOS notification for flagged calls — independent of the ask gate, so it also covers flagged calls that auto-run. |
 | `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | Only notify for matches at/above this severity. |
+
+## Languages
+
+Set `"lang"` to any code that has a file in [`hooks/locales/`](hooks/locales).
+Shipped today: **en** (base), **zh** (简体中文), **zh-Hant** (繁體中文),
+**ja** (日本語), **es** (Español), **fr** (Français). Everything the plugin
+says — dialog reasons, notifications, the Tier 2 model prompt, and
+`lens-status` — follows that setting.
+
+**Adding a language is one file, no code.** Copy `locales/en.yaml`, translate
+the values (never the keys), and name it after the language code. `en.yaml` is
+the base: any key you leave out or leave blank falls back to English, so a
+partial translation is genuinely useful from the first string. `rules.<id>`
+entries are keyed by rule id from [`hooks/rules*.yaml`](hooks), which hold the
+matching logic and no text at all.
+
+Two rules the tests enforce: every rule id must have English text
+(`test_locales.py`), and no locale may reference a rule that doesn't exist.
+When writing copy, follow the contract in the file's header — `risk` is one
+self-contained sentence a non-expert can act on, with no shell jargon; it is
+the dialog headline and has to stand alone.
+
+Translations beyond en/zh were machine-generated and are marked as such in
+each file header — corrections from native speakers are the most welcome kind
+of PR.
 
 ### Enabling Tier 2 (uses your own account)
 
@@ -221,8 +246,8 @@ supported way to bill these API calls to a subscription.
   paths). Read it any time:
 
   ```bash
-  python3 scripts/lens-status.py
-  # Permission Lens 0.6.0
+  uv run scripts/lens-status.py
+  # Permission Lens 0.8.0
   # last check 12s ago (Bash · no match · silent)
   # today: 47 checked · 🔴 2 · 🟡 5 · 🟢 0 · no match 40 · dialogs forced 2
   ```
@@ -389,7 +414,7 @@ claude --plugin-dir /path/to/permission-lens
 
 | Key | 取值 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `lang` | `"en"` \| `"zh"` | `"en"` | 解释语言。 |
+| `lang` | [`hooks/locales/`](hooks/locales) 里的任意语言代码 | `"en"` | 解释语言——见 [语言](#语言)。 |
 | `ask.min_severity` | `"low"` \| `"medium"` \| `"high"` | `"high"` | 命中该级别及以上的规则时,强制弹框并把解释印在弹框上;低于该级别时输出 `{}`、完全隐身。`"info"` 被有意拒绝——那会让每一次工具调用都弹框。 |
 | `max_message_chars` | 80–9000 | 500 | 解释长度硬上限。 |
 | `llm.enabled` | `true` \| `false` | `false` | 开启 Tier 2。必须是字面量 `true`。 |
@@ -400,6 +425,24 @@ claude --plugin-dir /path/to/permission-lens
 | `llm.send_file_content` | `true` \| `false` | `false` | Tier 2 是否发送 Write/Edit 的文件**内容**(而非只发路径)。默认关闭。 |
 | `notify.enabled` | `true` \| `false` | `false` | 对被标记的调用弹 macOS 通知——与 ask 阈值互相独立,自动放行的被标记调用也会通知。 |
 | `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | 只对该级别及以上的命中弹通知。 |
+
+## 语言
+
+把 `"lang"` 设成 [`hooks/locales/`](hooks/locales) 里任意一个有文件的语言代码。
+目前自带:**en**(基准)、**zh**(简体中文)、**zh-Hant**(繁體中文)、
+**ja**(日本語)、**es**(Español)、**fr**(Français)。插件说的每一句话——弹框
+理由、通知、Tier 2 的模型提示词、`lens-status` 输出——都跟随这个设置。
+
+**加一门语言只需加一个文件,不用改代码。** 复制 `locales/en.yaml`,翻译值(不要动
+键名),按语言代码命名即可。`en.yaml` 是基准:你没写或留空的键会自动回落英文,所以
+翻一半也是能用的。`rules.<id>` 按规则 id 索引,规则 id 来自
+[`hooks/rules*.yaml`](hooks)——那些文件现在只有匹配逻辑,一个字的文案都没有。
+
+测试会强制两条:每条规则必须有英文文案(`test_locales.py`),以及任何 locale 都不能
+引用不存在的规则。写文案请遵循文件头里的契约——`risk` 是一句能独立读懂、外行也能据此
+决策的完整句子,不含术语,因为它就是弹框上的标题行。
+
+en/zh 之外的翻译由模型生成,每个文件头都注明了这一点——母语者的修正是最受欢迎的 PR。
 
 ### 开启 Tier 2(用你自己的账户)
 
@@ -442,8 +485,8 @@ claude --plugin-dir /path/to/permission-lens
   URL 或路径)。随时看一眼:
 
   ```bash
-  python3 scripts/lens-status.py
-  # Permission Lens 0.6.0
+  uv run scripts/lens-status.py
+  # Permission Lens 0.8.0
   # 最近一次检查 12 秒前(Bash · 无命中 · 未弹框)
   # 今日已检查 47 次 · 🔴 2 · 🟡 5 · 🟢 0 · 无命中 40 · 弹框 2
   ```

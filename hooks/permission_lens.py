@@ -69,6 +69,79 @@ RULES_PATH = Path(__file__).with_name("rules.yaml")           # Bash
 WEB_RULES_PATH = Path(__file__).with_name("rules_web.yaml")   # WebFetch (URL)
 PATH_RULES_PATH = Path(__file__).with_name("rules_path.yaml") # Write / Edit
 
+# ── locales ───────────────────────────────────────────────────────────────────
+#
+# All user-visible text lives in locales/<lang>.yaml, keyed by rule id (plus
+# ui/verbs/llm_prompts/status sections). `en` is the base: every other locale is
+# merged over it per key, so a partial or blank translation degrades string by
+# string instead of breaking. Adding a language = adding one file, no code.
+
+LOCALES_DIR = Path(__file__).with_name("locales")
+BASE_LANG = "en"
+_LOCALE_CACHE = {}
+
+
+def available_langs():
+    """Language codes with a locale file, e.g. ('en', 'ja', 'zh').
+
+    The base language is always included: even with the locales directory
+    missing, `lang: "en"` must stay a valid config value (it renders the
+    built-in defaults).
+    """
+    try:
+        langs = {p.stem for p in LOCALES_DIR.glob("*.yaml")}
+    except Exception:
+        langs = set()
+    langs.add(BASE_LANG)
+    return tuple(sorted(langs))
+
+
+def _read_locale(lang):
+    if yaml is None:
+        return {}
+    try:
+        with open(LOCALES_DIR / f"{lang}.yaml", "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}  # missing/broken locale -> base language only
+
+
+def _merge_locale(base, over):
+    merged = dict(base)
+    for key, value in (over or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_locale(merged[key], value)
+        elif isinstance(value, str):
+            if value.strip():  # blank translation -> keep the base string
+                merged[key] = value
+        elif value is not None:
+            merged[key] = value
+    return merged
+
+
+def load_locale(lang):
+    """The requested locale merged over the English base, cached per process."""
+    if not isinstance(lang, str) or not lang:
+        lang = BASE_LANG
+    if lang not in _LOCALE_CACHE:
+        base = _read_locale(BASE_LANG)
+        _LOCALE_CACHE[lang] = base if lang == BASE_LANG else _merge_locale(
+            base, _read_locale(lang))
+    return _LOCALE_CACHE[lang]
+
+
+def rule_text(locale, rule_id, field):
+    """`explanation` or `risk` for a rule id ("" when absent in every locale)."""
+    entry = (locale.get("rules") or {}).get(rule_id) or {}
+    value = entry.get(field)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def ui_text(locale, key, default="", section="ui"):
+    value = (locale.get(section) or {}).get(key)
+    return value if isinstance(value, str) and value.strip() else default
+
 # ── configuration ─────────────────────────────────────────────────────────────
 
 CONFIG_PATH_ENV = "PERMISSION_LENS_CONFIG"      # test/debug override for the config path
@@ -111,7 +184,6 @@ DEFAULT_CONFIG = {
     },
 }
 
-_LANGS = ("en", "zh")
 _SEVERITY_THRESHOLDS = ("info", "low", "medium", "high")
 _ASK_THRESHOLDS = ("low", "medium", "high")  # no "info": would ask on everything
 # max_message_chars bounds: floor keeps at least a headline visible; ceiling stays
@@ -139,7 +211,9 @@ def load_config():
 
 def _validate_config(raw):
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
-    if raw.get("lang") in _LANGS:
+    # Any language with a locale file is valid; a typo falls back to the default
+    # rather than silently rendering English under a wrong-looking config.
+    if raw.get("lang") in available_langs():
         cfg["lang"] = raw["lang"]
     ask_raw = raw.get("ask")
     if isinstance(ask_raw, dict) and ask_raw.get("min_severity") in _ASK_THRESHOLDS:
@@ -185,11 +259,11 @@ def _clamped_number(value, default, lo, hi, want_int=False):
 
 SEVERITY_ORDER = {"high": 3, "medium": 2, "low": 1}
 SEVERITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
-SEVERITY_LABEL = {
-    "en": {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"},
-    "zh": {"high": "高危", "medium": "中危", "low": "低危"},
-}
 INFO_EMOJI = "ℹ️"
+
+
+def severity_label(locale, severity):
+    return ui_text(locale, f"severity_{severity}", severity.upper())
 
 
 # ── command parsing (conservative; not a full bash grammar) ───────────────────
@@ -412,9 +486,7 @@ def _load_rules_from(path, default_field="path"):
             "scope": raw.get("scope", "whole"),
             # which subject string a string-rule matches against (see match_string_rules)
             "field": raw.get("field", default_field),
-            "explanation": {"en": raw.get("explanation_en", ""), "zh": raw.get("explanation_zh", "")},
-            "risk": {"en": raw.get("risk_en", ""), "zh": raw.get("risk_zh", "")},
-        })
+        })  # user-visible text is resolved per language from locales/<lang>.yaml
     _RULES_CACHE[path] = rules
     return rules
 
@@ -473,91 +545,41 @@ def match_string_rules(rules, subjects):
 
 # ── neutral "what it does" summary ────────────────────────────────────────────
 
-# Verb phrasing for common commands, so a no-risk-match dialog still gets a line.
-_VERB_PHRASES = {
-    "en": {
-        "ls": "Lists directory contents",
-        "cat": "Prints file contents",
-        "cd": "Changes the working directory",
-        "cp": "Copies files",
-        "mv": "Moves or renames files",
-        "mkdir": "Creates a directory",
-        "touch": "Creates or updates a file timestamp",
-        "echo": "Prints text",
-        "grep": "Searches text",
-        "rg": "Searches text (ripgrep)",
-        "find": "Searches the filesystem",
-        "sed": "Edits a text stream",
-        "awk": "Processes text",
-        "python": "Runs a Python program",
-        "python3": "Runs a Python program",
-        "node": "Runs a Node.js program",
-        "make": "Runs a make target",
-        "brew": "Runs a Homebrew command",
-        "docker": "Runs a Docker command",
-        "kubectl": "Runs a kubectl command",
-    },
-    "zh": {
-        "ls": "列出目录内容",
-        "cat": "输出文件内容",
-        "cd": "切换工作目录",
-        "cp": "复制文件",
-        "mv": "移动或重命名文件",
-        "mkdir": "创建目录",
-        "touch": "创建文件或更新时间戳",
-        "echo": "输出文本",
-        "grep": "搜索文本",
-        "rg": "搜索文本(ripgrep)",
-        "find": "搜索文件系统",
-        "sed": "编辑文本流",
-        "awk": "处理文本",
-        "python": "运行 Python 程序",
-        "python3": "运行 Python 程序",
-        "node": "运行 Node.js 程序",
-        "make": "运行 make 目标",
-        "brew": "运行 Homebrew 命令",
-        "docker": "运行 Docker 命令",
-        "kubectl": "运行 kubectl 命令",
-    },
-}
-_FALLBACK_SUMMARY = {"en": "Runs a shell command", "zh": "运行一条 shell 命令"}
-_RUNS_LABEL = {"en": "Runs", "zh": "运行"}
+# Verb phrasing lives in the locale files (`verbs` section), so a no-risk-match
+# notification still gets a line in the reader's language.
 _SUBCOMMAND_TOOLS = {"git", "npm", "pnpm", "yarn", "docker", "kubectl", "cargo", "go", "pip", "pip3", "brew", "gh"}
 
 
 def neutral_summary(parsed, lang=LANG):
-    lang = lang if lang in _LANGS else "en"
+    locale = load_locale(lang)
+    runs = ui_text(locale, "runs", "Runs")
     sc = parsed.simple_commands[0] if parsed.simple_commands else None
     if not sc or not sc.name:
-        return _FALLBACK_SUMMARY[lang]
+        return ui_text(locale, "fallback_summary", "Runs a shell command")
     name = sc.name
     _, args = sc.flags_and_args()
     if name in _SUBCOMMAND_TOOLS and args:
-        return f"{_RUNS_LABEL[lang]}: {name} {args[0]}"
-    if name in _VERB_PHRASES[lang]:
-        return _VERB_PHRASES[lang][name]
-    return f"{_RUNS_LABEL[lang]} `{name}`"
+        return f"{runs}: {name} {args[0]}"
+    verb = ui_text(locale, name, "", section="verbs")
+    return verb or f"{runs} `{name}`"
 
 
-_FETCHES_LABEL = {"en": "Fetches", "zh": "访问"}
-_WRITES_LABEL = {"en": "Writes", "zh": "写入"}
-_EDITS_LABEL = {"en": "Edits", "zh": "编辑"}
 # Grab the host from a URL without importing urllib (kept lazy for Tier 2);
 # strip any userinfo so credentials are never echoed into the summary.
 _URL_HOST_RE = re.compile(r"^[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
 
 
 def neutral_summary_web(url, lang=LANG):
-    lang = lang if lang in _LANGS else "en"
+    label = ui_text(load_locale(lang), "fetches", "Fetches")
     m = _URL_HOST_RE.search(url or "")
     host = m.group(1) if m else (url or "").strip()[:60]
-    return f"{_FETCHES_LABEL[lang]} {host}" if host else _FETCHES_LABEL[lang]
+    return f"{label} {host}" if host else label
 
 
-def neutral_summary_path(file_path, label_map, lang=LANG):
-    lang = lang if lang in _LANGS else "en"
+def neutral_summary_path(file_path, label_key, lang=LANG):
+    label = ui_text(load_locale(lang), label_key, label_key.capitalize())
     base = os.path.basename((file_path or "").rstrip("/")) or (file_path or "")
-    return f"{label_map[lang]} {base}"
+    return f"{label} {base}"
 
 
 # ── reason formatting ─────────────────────────────────────────────────────────
@@ -576,11 +598,11 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     the top rule's `risk` sentence — written in the YAML as a self-contained
     plain-language sentence: what the call does AND why it matters, no jargon.
     """
+    locale = load_locale(lang)
     top = matches[0]
     sev = top["severity"]
     emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
-    label = SEVERITY_LABEL[lang].get(sev, sev.upper())
-    parts = [f"{emoji} {label} · {top['risk'][lang]}"]
+    parts = [f"{emoji} {severity_label(locale, sev)} · {rule_text(locale, top['id'], 'risk')}"]
     # Up to two additional distinct risks (dedupe by category to avoid near-dupes);
     # extras use the short `explanation` phrase, not the full sentence.
     seen = {top["category"]}
@@ -590,7 +612,7 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
             continue
         seen.add(rule["category"])
         e = SEVERITY_EMOJI.get(rule["severity"], INFO_EMOJI)
-        parts.append(f"{e} {rule['explanation'][lang]}")
+        parts.append(f"{e} {rule_text(locale, rule['id'], 'explanation')}")
         extras += 1
         if extras == 2:
             break
@@ -636,55 +658,10 @@ LLM_MAX_TOKENS = 300
 # Dialogs show short subjects; skip Tier 2 for pathological inputs.
 LLM_MAX_COMMAND_CHARS = 4000
 
-# One system prompt per tool "kind"; the user message is the subject string
-# (command / URL / file path [+ optional contents]) and nothing else.
-LLM_SYSTEM_PROMPTS = {
-    "bash": {
-        "en": (
-            "You explain shell commands shown in a permission dialog. The user "
-            "message is exactly one shell command. Reply with 1-2 short plain-text "
-            "sentences in English a non-expert can follow: what the command does "
-            "and any notable risk. Plain words over jargon. No markdown, no "
-            "preamble, no code blocks."
-        ),
-        "zh": (
-            "你负责解释权限弹框里出现的 shell 命令。用户消息就是一条 shell 命令本身。"
-            "用 1-2 句简短的中文大白话回答:这条命令做什么、有什么值得注意的风险。"
-            "让不懂命令行的人也能看懂,少用术语。不要用 Markdown,不要客套开场白,不要代码块。"
-        ),
-    },
-    "url": {
-        "en": (
-            "You explain a web fetch shown in a permission dialog. The user "
-            "message is exactly one URL a coding agent is about to fetch. Reply "
-            "with 1-2 short plain-text sentences in English: what fetching it "
-            "does and any notable risk (untrusted host, credentials or secrets "
-            "in the URL, an internal/loopback target). No markdown, no preamble."
-        ),
-        "zh": (
-            "你负责解释权限弹框里的一次网络抓取。用户消息就是一个即将被抓取的 URL。"
-            "用 1-2 句简短的中文纯文本回答:抓取它会做什么、有什么值得注意的风险"
-            "(不可信主机、URL 里带凭据或密钥、指向内网/回环)。不要用 Markdown,不要客套。"
-        ),
-    },
-    "path": {
-        "en": (
-            "You explain a file write/edit shown in a permission dialog. The "
-            "user message is the target file PATH a coding agent is about to "
-            "write or edit, optionally followed after a blank line by the new "
-            "contents. Reply with 1-2 short plain-text sentences in English: "
-            "what that file/location is and any notable risk of changing it. "
-            "No markdown, no preamble."
-        ),
-        "zh": (
-            "你负责解释权限弹框里的一次文件写入/编辑。用户消息是即将被写入或编辑的"
-            "目标文件路径,后面可能空一行再附上新内容。用 1-2 句简短的中文纯文本回答:"
-            "这个文件/位置是什么、改动它有什么值得注意的风险。不要用 Markdown,不要客套。"
-        ),
-    },
-}
-# Back-compat alias (the Bash prompts) for existing references.
-LLM_SYSTEM_PROMPT = LLM_SYSTEM_PROMPTS["bash"]
+# One system prompt per tool "kind", read from the locale's `llm_prompts`
+# section so the model answers in the reader's language; the user message is
+# the subject string (command / URL / file path [+ optional contents]) alone.
+LLM_PROMPT_KINDS = ("bash", "url", "path")
 
 
 def tier2_explanation(subject, config, kind="bash"):
@@ -699,7 +676,7 @@ def tier2_explanation(subject, config, kind="bash"):
     try:
         if not subject or len(subject) > LLM_MAX_COMMAND_CHARS:
             return None
-        if kind not in LLM_SYSTEM_PROMPTS:
+        if kind not in LLM_PROMPT_KINDS:
             kind = "bash"
         model, lang = llm["model"], config.get("lang", "en")
         ttl_days = llm["cache_ttl_days"]
@@ -751,13 +728,14 @@ def _post_messages_api(subject, model, lang, kind, credential, timeout):
     # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
     import urllib.request
 
-    prompts = LLM_SYSTEM_PROMPTS.get(kind, LLM_SYSTEM_PROMPTS["bash"])
+    system = ui_text(load_locale(lang), kind, "", section="llm_prompts") or ui_text(
+        load_locale(BASE_LANG), "bash", "", section="llm_prompts")
     # PRIVACY INVARIANT: the request body is a static system prompt plus the
     # subject string, nothing else. No cwd, session_id, or transcript content.
     body = json.dumps({
         "model": model,
         "max_tokens": LLM_MAX_TOKENS,
-        "system": prompts.get(lang, prompts["en"]),
+        "system": system,
         "messages": [{"role": "user", "content": subject}],
     }).encode("utf-8")
     headers = {
@@ -916,11 +894,11 @@ def maybe_notify(tool, matches, neutral, config, lang, event=None):
         # several windows running, "which one is asking me?" is the first
         # question a notification has to answer (the M6 pairing weakness).
         if matches:
+            locale = load_locale(lang)
             top = matches[0]
             emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
-            head = emoji + " " + SEVERITY_LABEL.get(lang, SEVERITY_LABEL["en"]).get(
-                top["severity"], top["severity"].upper())
-            detail = top["explanation"][lang]
+            head = f"{emoji} {severity_label(locale, top['severity'])}"
+            detail = rule_text(locale, top["id"], "explanation")
         else:  # only reached at min_severity "info" — benign/neutral call
             head, detail = INFO_EMOJI, neutral
         send_desktop_notification(
@@ -1049,15 +1027,15 @@ def _analyze_webfetch(tool_input, config, lang):
 
 def _analyze_write(tool_input, config, lang):
     return _analyze_file(tool_input, config, lang,
-                         content_key="content", label=_WRITES_LABEL)
+                         content_key="content", label_key="writes")
 
 
 def _analyze_edit(tool_input, config, lang):
     return _analyze_file(tool_input, config, lang,
-                         content_key="new_string", label=_EDITS_LABEL)
+                         content_key="new_string", label_key="edits")
 
 
-def _analyze_file(tool_input, config, lang, content_key, label):
+def _analyze_file(tool_input, config, lang, content_key, label_key):
     # Write: {file_path, content}; Edit: {file_path, old_string, new_string}.
     path = tool_input.get("file_path")
     if not path or not str(path).strip():
@@ -1074,7 +1052,7 @@ def _analyze_file(tool_input, config, lang, content_key, label):
     subject = path
     if (config.get("llm") or {}).get("send_file_content") and content:
         subject = f"{path}\n\n{content}"
-    return matches, neutral_summary_path(path, label, lang), subject, "path", path
+    return matches, neutral_summary_path(path, label_key, lang), subject, "path", path
 
 
 TOOL_ANALYZERS = {

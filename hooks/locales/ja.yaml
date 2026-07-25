@@ -1,0 +1,230 @@
+# Permission Lens — 日本語 locale (ja)
+#
+# Machine-translated from en.yaml; review by a native speaker is very welcome
+# (機械翻訳です。ネイティブスピーカーによる修正 PR を歓迎します).
+#
+# Every user-visible string lives here. `en.yaml` is the base: any key missing
+# from another locale falls back to the English one, so a partial translation
+# degrades per-string instead of breaking.
+#
+# Sections:
+#   rules        keyed by rule id (see hooks/rules*.yaml for the matching logic)
+#                explanation = short jargon-free phrase (notifications, extra
+#                              risks appended to a dialog reason)
+#                risk        = ONE self-contained plain-language sentence: what
+#                              the call does AND why it matters. This is the
+#                              dialog headline; it must make sense alone, to a
+#                              reader who won't look anything up. No shell
+#                              jargon (pipe, process substitution, block
+#                              device…) — name the consequence concretely.
+#   ui           severity labels and the verbs used to build neutral summaries
+#   verbs        "what this command does" phrases, keyed by command name
+#   llm_prompts  Tier 2 system prompts (must instruct the model to answer in
+#                this language, in plain words, 1-2 sentences, no markdown)
+#   status       strings for scripts/lens-status.py
+
+locale: ja
+name: 日本語
+rules:
+  rm-rf-risky-target:
+    explanation: 変数やワイルドカードで指定したフォルダをまるごと削除
+    risk: 変数やワイルドカードから組み立てたパスの下をすべて削除するため、展開結果が想定とずれると思っていたよりはるかに多くのファイルが消え、ゴミ箱にも残らず元に戻せません。
+  rm-rf-plain:
+    explanation: フォルダと中身を完全に削除
+    risk: フォルダとその中身をまるごと完全に削除するため、ゴミ箱にも残らず、元に戻す方法はありません。
+  dd-to-device:
+    explanation: ディスクに生データを直接書き込む
+    risk: ディスクそのものに直接データを書き込むため、対象を一つ間違えるとディスクやパーティション全体が上書きされ、復元できなくなります。
+  mkfs:
+    explanation: ストレージをフォーマットする
+    risk: ストレージをフォーマットするため、いま保存されているデータはすべて消えます。
+  shred:
+    explanation: ファイルを復元不能に消去
+    risk: 二度と復元できないようにファイルを上書きして消すため、復元ツールを使っても取り戻せません。
+  chmod-chown-recursive:
+    explanation: フォルダ配下すべての権限を変更
+    risk: フォルダの下にあるすべてのファイルについて誰がアクセスできるかを一度に変更するため、パスを間違えると自分やシステムが大量のファイルを扱えなくなることがあります。
+  chmod-world-writable:
+    explanation: 全ユーザーが書き換えられる状態にする
+    risk: このマシンのすべてのユーザーがこれらのファイルを書き換えられるようになるため、あとでそれを動かす処理は誰かに中身をすり替えられたものを実行するおそれがあります。
+  pipe-to-shell:
+    explanation: スクリプトをダウンロードして即実行
+    risk: スクリプトをダウンロードしてそのまま実行するため、中身を一度も確認できず、配布元が誰かの確認したものとは違う内容を返す可能性もあります。
+  shell-from-process-sub:
+    explanation: 取得したコードをその場で実行
+    risk: インターネットから取得したコードを届いた瞬間に実行するため、誰かが中身を読んで確かめる余地がまったくありません。
+  curl-pipe-interpreter:
+    explanation: コードを取得してそのまま実行
+    risk: ダウンロードしたコードをそのまま Python や Node などに渡して実行するため、何をするコードなのか誰も確認しないうちに動き出します。
+  curl-upload-file:
+    explanation: ローカルのファイルをサーバーへ送信
+    risk: このマシンにあるファイルを外部のサーバーへ送信するため、鍵や個人情報が含まれていればそれが手元を離れ、取り消せません。
+  file-piped-to-network:
+    explanation: ファイルの中身をネットワークへ送信
+    risk: ローカルのファイルの中身をそのままネットワークへ送り出すため、秘密情報を含むデータが気づかないうちにマシンの外へ出ていく典型的な経路になります。
+  netcat-outbound:
+    explanation: ファイルを生の接続で外部へ送信
+    risk: ローカルのファイルを、暗号化も記録もされない通信でそのまま外部へ送り出します。
+  ssh-key-access:
+    explanation: SSH のログイン鍵に触れる
+    risk: SSH の鍵に触れる操作で、この鍵を持つ人は誰でもあなたとしてサーバーにログインできるため、コマンドが鍵をどこへコピー・送信するのかを確認してください。
+  aws-creds-access:
+    explanation: AWS の認証情報を読み取る
+    risk: AWS の認証情報を読み取る操作で、これを手にした人はあなたのクラウドを自由に操作して料金も発生させられるため、読み取った内容がどこへ渡るのかを確認してください。
+  dotenv-access:
+    explanation: .env の秘密情報ファイルを読む
+    risk: API キーやパスワードが入っていることの多い .env ファイルを読み取るため、読み取った内容をコマンドがどこへ送るのかを確かめておくと安心です。
+  macos-keychain-dump:
+    explanation: キーチェーンの保存パスワードを取り出す
+    risk: Mac のキーチェーンに保存されたパスワードをそのまま読める形で取り出すため、そこに入っているものはすべてコピーされ得ます。
+  linux-keyring-access:
+    explanation: キーリングの保存パスワードを読む
+    risk: デスクトップのキーリングに保存されたパスワードを読み取るため、そこに保管された認証情報がコピーされ得ます。
+  shell-history-access:
+    explanation: コマンド履歴を読む
+    risk: 過去に入力したパスワードやトークン、サーバー名がそのまま残っていることの多いコマンド履歴を読み取ります。
+  base64-decode-exec:
+    explanation: base64 に隠されたコードを実行
+    risk: base64 で見えなくした文字列を元に戻してコードとして実行するもので、そもそもこの隠し方は何が動くのかを見えなくするために使われます。
+  hex-decode-exec:
+    explanation: 16 進数に隠されたコードを実行
+    risk: 16 進数で見えなくした文字列を元に戻してコードとして実行するため、コマンドを読んでも実際に何が動くのかはわかりません。
+  eval-dynamic:
+    explanation: 実行時に組み立てたコマンドを実行
+    risk: 実行時に文字列を組み立ててそれをコマンドとして実行するため、ここに表示されている文字列は実際に動くコマンドとは限りません。
+  sudo:
+    explanation: 管理者権限で実行
+    risk: 管理者（root）権限で実行するため、間違えたときの影響は自分のファイルだけにとどまらず、システム全体に及びます。
+  su-switch-user:
+    explanation: 別のユーザーに切り替える
+    risk: 別のユーザーアカウント（多くの場合 root）に切り替わり、それ以降の操作はあなたではなくそのユーザーとして実行されます。
+  git-push-force:
+    explanation: リモートの git 履歴を上書き
+    risk: リモートリポジトリの履歴を上書きするため、他の人が push したコミットが完全に失われることがあります。
+  git-reset-hard:
+    explanation: 未コミットの変更をすべて破棄
+    risk: コミットしていない変更をすべて捨てるため、まだ commit していない作業は消えてしまい、元に戻せません。
+  git-clean-force:
+    explanation: git 管理外のローカルファイルを削除
+    risk: git が管理していないファイルを削除するもので、ここにしか存在しないメモや設定ファイルであることが多く、消すと取り戻せません。
+  git-remote-change:
+    explanation: push 先のサーバーを変更
+    risk: リポジトリの push 先サーバーを変更するため、以後の push が気づかないうちに別の、場合によっては悪意のある場所へ送られる可能性があります。
+  npm-publish:
+    explanation: npm にパッケージを公開
+    risk: パッケージを npm 上で全世界に公開するため、いったん出したバージョンは事実上取り消せません。
+  pypi-upload:
+    explanation: PyPI にパッケージを公開
+    risk: パッケージを PyPI に公開するもので、公開すれば誰でも取得でき、そのバージョン番号は二度と使い回せません。
+  iac-destroy:
+    explanation: 稼働中のクラウド基盤を破棄
+    risk: 稼働中のクラウド基盤をデータベースごと破棄するため、消えたものはたいてい二度と戻ってきません。
+  cloud-cli-delete:
+    explanation: クラウド上のリソースを削除
+    risk: クラウドアカウント上のリソースを削除するもので、クラウドの削除は取り消せないことが多く、中のデータも一緒に失われることがあります。
+  crontab-modify:
+    explanation: コマンドの自動実行を登録
+    risk: 決まった時刻にコマンドが自動で走るよう登録するため、この作業が終わったあとも裏で動き続けます。
+  systemd-service:
+    explanation: 常駐サービスの設定を変更
+    risk: バックグラウンドで動くシステムサービスを変更するもので、有効になったサービスは以後、確認を求めることなく起動のたびに自分で立ち上がります。
+  launchd-modify:
+    explanation: プログラムを自動起動に登録
+    risk: ログイン時や起動時にプログラムが自動で立ち上がるよう登録するため、以後は確認なしに動き続けます。
+  shell-rc-append:
+    explanation: シェルの起動ファイルにコードを追加
+    risk: シェルの起動ファイルにコードを追加するため、ターミナルを開くたびに毎回実行され、居座るものを仕込む場所としてもよく使われます。
+  web-userinfo:
+    explanation: URL にユーザー名とパスワードが含まれる
+    risk: この URL にはユーザー名とパスワードがそのまま書かれているため、通信が通るログや履歴すべてに残り、そこから漏れるおそれがあります。
+  web-secret-in-query:
+    explanation: URL のパラメータに秘密情報が含まれる
+    risk: この URL はパラメータに鍵やトークン、パスワードを含んでおり、URL はサーバーや中継機器に記録されるため、その秘密情報も一緒に書き残されます。
+  web-ip-or-localhost:
+    explanation: IP アドレスや自分のマシンへアクセス
+    risk: 通常のウェブサイトではなく、IP アドレスそのものや自分のマシンにアクセスするもので、手元のコンピューターや社内ネットワークを探るときによく使われる形です。
+  web-script-host:
+    explanation: スクリプト置き場や短縮 URL から取得
+    risk: スクリプトの生ファイルや短縮リンクを主に配信しているサイトから取得するため、実際に何が返ってくるのかを使う前に一度確認しておくと安心です。
+  web-insecure-http:
+    explanation: 暗号化されない HTTP で取得
+    risk: 暗号化されない HTTP で取得するため、通信経路にいる人が中身を読んだり、返ってくるものを書き換えたりできます。
+  path-ssh:
+    explanation: SSH 鍵のフォルダに書き込む
+    risk: サーバーへのログイン鍵が置かれている ~/.ssh フォルダに書き込むため、ここへの変更はサーバーへのアクセス権を他人に渡したり、別の場所へ向けたりし得ます。
+  path-aws:
+    explanation: AWS 認証情報のフォルダに書き込む
+    risk: クラウドのアクセスキーが置かれている ~/.aws フォルダに書き込むため、ここへの変更はクラウドアカウントの操作権限をそのまま他人に渡し得ます。
+  path-dotenv:
+    explanation: .env の秘密情報ファイルを書き込む
+    risk: API キーやパスワードが入ることの多い .env ファイルを書き込むため、実際に何が書き込まれるのかを一行ずつ確かめておくと安心です。
+  path-shell-rc:
+    explanation: シェルの起動ファイルを書き換える
+    risk: シェルの起動ファイルを書き換えるため、そこに入った内容は以後ターミナルを開くたびに毎回実行されます。
+  path-git-hooks:
+    explanation: 自動実行される git フックを書き込む
+    risk: git フックを書き込むもので、以後はコミットや push のたびにそのスクリプトがあなたと同じ権限で勝手に実行されます。
+  path-ci-workflow:
+    explanation: CI のワークフローファイルを書き込む
+    risk: CI のワークフローを書き込むため、次の push で自動的に実行され、リポジトリに保存された秘密情報にも手が届きます。
+  path-launch-agent:
+    explanation: macOS の自動起動エントリを書き込む
+    risk: macOS の自動起動エントリを書き込むため、そこで指定されたプログラムは以後、ログインや起動のたびに自分で立ち上がります。
+  path-cron:
+    explanation: スケジュール実行の設定を書き込む
+    risk: スケジュール実行の設定を書き込むため、そこに書かれたコマンドは以後、誰も見ていないところで時間になると自動的に動きます。
+  path-sudoers:
+    explanation: 管理者権限を決めるファイルを書き込む
+    risk: このマシンで誰が管理者権限を持てるかを決める sudoers ファイルを書き込むため、ここへの変更は恒久的な root 権限を与えることにもなり得ます。
+  path-etc:
+    explanation: システム全体の設定（/etc）を書き込む
+    risk: システム全体の設定が置かれた /etc に書き込むため、その変更はこのマシンのすべてのユーザーとプログラムに影響します。
+  content-remote-exec:
+    explanation: 書き込む内容にコードの取得と実行が含まれる
+    risk: 書き込もうとしている内容にコードをダウンロードして実行する処理（eval を含む）が入っており、このファイルが動くたびに未確認のコードをインターネットから取ってきて実行します。
+ui:
+  severity_high: 高リスク
+  severity_medium: 中リスク
+  severity_low: 低リスク
+  fallback_summary: シェルコマンドを実行
+  runs: 実行
+  fetches: 取得
+  writes: 書き込み
+  edits: 編集
+verbs:
+  ls: ディレクトリの内容を一覧表示
+  cat: ファイルの内容を表示
+  cd: 作業ディレクトリを変更
+  cp: ファイルをコピー
+  mv: ファイルを移動または名前変更
+  mkdir: ディレクトリを作成
+  touch: ファイルの作成またはタイムスタンプ更新
+  echo: テキストを表示
+  grep: テキストを検索
+  rg: テキストを検索（ripgrep）
+  find: ファイルシステムを検索
+  sed: テキストストリームを編集
+  awk: テキストを処理
+  python: Python プログラムを実行
+  python3: Python プログラムを実行
+  node: Node.js プログラムを実行
+  make: make のターゲットを実行
+  brew: Homebrew のコマンドを実行
+  docker: Docker のコマンドを実行
+  kubectl: kubectl のコマンドを実行
+llm_prompts:
+  bash: 'あなたは権限ダイアログに表示されたシェルコマンドを説明します。ユーザーメッセージはシェルコマンドそのもの 1 行です。日本語のわかりやすい話し言葉で、短い 1〜2 文の平文で答えてください。そのコマンドが何をするのか、そして注意すべきリスクは何かを書きます。専門用語は避け、コマンドラインに詳しくない人にも伝わる言葉を使ってください。Markdown もコードブロックも前置きも使わないでください。'
+  url: 'あなたは権限ダイアログに表示されたウェブ取得を説明します。ユーザーメッセージは、コーディングエージェントがこれから取得しようとしている URL 1 件です。日本語のわかりやすい言葉で、短い 1〜2 文の平文で答えてください。それを取得すると何が起きるのか、そして注意すべきリスク（信頼できない配信元、URL に含まれる認証情報や秘密情報、社内や自分のマシンを指す宛先など）は何かを書きます。Markdown も前置きも使わないでください。'
+  path: 'あなたは権限ダイアログに表示されたファイルの書き込み／編集を説明します。ユーザーメッセージは、コーディングエージェントがこれから書き込むまたは編集する対象ファイルのパスで、空行のあとに新しい内容が続くこともあります。日本語のわかりやすい言葉で、短い 1〜2 文の平文で答えてください。そのファイルや場所が何なのか、そしてそれを変更するときに注意すべきリスクは何かを書きます。Markdown も前置きも使わないでください。'
+status:
+  none: 一致なし
+  asked: ダイアログ表示
+  silent: 通知なし
+  last: '最終チェック {age}（{tool} · {what}）'
+  today: '本日 {total} 件チェック · 🔴 {high} · 🟡 {medium} · 🟢 {low} · 一致なし {none} · ダイアログ {asked}'
+  empty: 'まだ呼び出しの記録がありません — プラグインを有効にしたセッションで Bash/WebFetch/Write/Edit をどれか実行してください（ハートビート: {path}）'
+  stale_day: '（カウンタは本日ではなく {day} のものです）'
+  s: '{n} 秒前'
+  m: '{n} 分前'
+  h: '{n} 時間前'
+  d: '{n} 日前'

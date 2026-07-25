@@ -127,7 +127,7 @@ def test_request_contains_only_command_and_static_prompt(monkeypatch):
     assert set(body) == {"model", "max_tokens", "system", "messages"}
     assert body["model"] == "claude-haiku-4-5"
     assert body["messages"] == [{"role": "user", "content": COMMAND}]
-    assert body["system"] == pl.LLM_SYSTEM_PROMPT["en"]
+    assert body["system"] == pl.ui_text(pl.load_locale("en"), "bash", section="llm_prompts")
 
 
 def test_oauth_token_used_when_no_api_key(monkeypatch):
@@ -160,7 +160,7 @@ def test_zh_config_uses_zh_prompt(monkeypatch):
     cfg["lang"] = "zh"
     pl.tier2_explanation(COMMAND, cfg)
     body = json.loads(captured[0][0].data.decode("utf-8"))
-    assert body["system"] == pl.LLM_SYSTEM_PROMPT["zh"]
+    assert body["system"] == pl.ui_text(pl.load_locale("zh"), "bash", section="llm_prompts")
 
 
 def test_multiline_reply_collapsed_to_one_line(monkeypatch):

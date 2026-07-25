@@ -133,8 +133,8 @@ def test_edit_benign_content_no_content_rule():
 
 
 def test_path_neutral_summaries():
-    assert pl.neutral_summary_path("/a/b/app.py", pl._WRITES_LABEL) == "Writes app.py"
-    assert pl.neutral_summary_path("/a/b/app.py", pl._EDITS_LABEL, lang="zh") == "编辑 app.py"
+    assert pl.neutral_summary_path("/a/b/app.py", "writes") == "Writes app.py"
+    assert pl.neutral_summary_path("/a/b/app.py", "edits", lang="zh") == "编辑 app.py"
 
 
 # ── dispatch via build_message ────────────────────────────────────────────────
@@ -239,7 +239,7 @@ def test_write_tier2_sends_path_not_content_by_default(capture_api):
     body = capture_api[0]
     assert body["messages"][0]["content"] == "/Users/x/.ssh/config"
     assert "SUPER_SECRET_TOKEN_xyz" not in json.dumps(body)
-    assert body["system"] == pl.LLM_SYSTEM_PROMPTS["path"]["en"]
+    assert body["system"] == pl.ui_text(pl.load_locale("en"), "path", section="llm_prompts")
 
 
 def test_write_tier2_sends_content_when_opted_in(capture_api):
@@ -257,4 +257,4 @@ def test_webfetch_tier2_sends_url_not_prompt(capture_api):
     body = capture_api[0]
     assert body["messages"][0]["content"] == "https://user:pass@h/x"
     assert "MY_PRIVATE_PROMPT_TEXT" not in json.dumps(body)
-    assert body["system"] == pl.LLM_SYSTEM_PROMPTS["url"]["en"]
+    assert body["system"] == pl.ui_text(pl.load_locale("en"), "url", section="llm_prompts")

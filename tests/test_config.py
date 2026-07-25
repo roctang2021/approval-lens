@@ -54,7 +54,7 @@ def test_partial_config_merges_with_defaults(monkeypatch, tmp_path):
 
 def test_invalid_values_fall_back_per_key(monkeypatch, tmp_path):
     cfg = _load(monkeypatch, tmp_path, {
-        "lang": "fr",
+        "lang": "tlh",  # no such locale file (a shipped language would be valid)
         "ask": {"min_severity": "banana"},
         "max_message_chars": "lots",
         "llm": {"enabled": "yes", "model": "", "timeout_seconds": True,

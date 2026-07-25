@@ -458,3 +458,34 @@ decided/implemented.
   interpolated into AppleScript — `_osa_escape` (existing, tested) escapes
   backslash/quote and flattens newlines.
 - Suite: 241 tests (+9). Plugin version 0.7.0.
+
+## M10 (2026-07-19): locale files — adding a language is one file, no code
+
+- **Why** (owner request: "怎么支持更多的语言"): text was scattered across 10
+  places — 52 rules × 4 text fields in 3 rule YAMLs, plus 9 language dicts in
+  permission_lens.py and lens-status.py, plus a hardcoded `_LANGS`. Adding a
+  language meant touching all of them, and every NEW rule needed copy in every
+  language inline. The blocker was structure, not translation.
+- **Structure**: `hooks/locales/<lang>.yaml` with sections `rules` (keyed by
+  rule id), `ui`, `verbs`, `llm_prompts`, `status`. `rules*.yaml` now hold
+  matching logic only. `en` is the base; `load_locale(lang)` deep-merges the
+  requested locale over it, and a **blank** string does not override (so an
+  untranslated placeholder falls back rather than rendering empty).
+  `available_langs()` discovers files on disk and always includes `en`, so a
+  broken install still validates `lang: "en"`.
+- **Extraction was mechanical, not retyped**: a one-off script read the rule
+  YAMLs and the live module dicts to emit en/zh, then stripped the text fields
+  from the rule files line-by-line (preserving their comments). No copy was
+  re-keyed by hand.
+- **lens-status.py** now imports the hook module for config + locale instead of
+  carrying its own copies; it declares pyyaml via PEP 723, so it runs as
+  `uv run scripts/lens-status.py` (was bare python3).
+- **Guard rails** (`tests/test_locales.py`, 16 tests): every rule id has
+  English text; no locale references a nonexistent rule; each shipped locale
+  renders a complete single-line reason; unknown language and missing locale
+  dir degrade to the base; missing/blank keys fall back per key. This is what
+  keeps "add a rule, forget the copy" from shipping an empty headline.
+- **Languages seeded** (owner's pick): ja, es, zh-Hant, fr — translated by one
+  subagent each against the copy contract, marked machine-translated in their
+  headers pending native review.
+- Suite: 257 tests before the new locales. Plugin version 0.8.0.

@@ -3,52 +3,31 @@
 # Same rule shape as rules.yaml, but each `regex` is matched against the URL
 # string (tool_input.url), not a shell command. WebFetch is read-only, so most
 # signals are low/medium — informational, not destructive.
-# Copy contract (same as rules.yaml): risk_* is one self-contained
-# plain-language sentence (the dialog headline); explanation_* is a short
-# jargon-free phrase for notifications and extra-risk entries.
+# Matching logic only — user-visible text lives in hooks/locales/<lang>.yaml
+# under `rules.<id>` (see rules.yaml's header).
 
 rules:
   - id: web-userinfo
     category: credential-access
     severity: high
     regex: "^[a-zA-Z][\\w+.-]*://[^/@?#\\s]*:[^/@?#\\s]*@"
-    explanation_en: "URL contains a username and password"
-    explanation_zh: "URL 里带着账号密码"
-    risk_en: "This URL has a username and password written inside it — every log and history the request passes through will record them, and they can leak."
-    risk_zh: "这个 URL 里直接写着账号和密码——请求沿途经过的日志和历史记录都会留下它们，很容易泄露。"
 
   - id: web-secret-in-query
     category: exfiltration
     severity: medium
     regex: "[?&](access[_-]?token|api[_-]?key|apikey|auth|token|secret|password|passwd|pwd|session)="
-    explanation_en: "URL carries a secret in its parameters"
-    explanation_zh: "URL 参数里带着机密"
-    risk_en: "This URL carries a key, token, or password in its parameters — servers and proxies record URLs, so the secret gets written down along the way."
-    risk_zh: "这个 URL 的参数里带着密钥/令牌/密码——服务器和代理都会记录 URL，机密会被沿途留档。"
 
   - id: web-ip-or-localhost
     category: internal-target
     severity: medium
     regex: "://(\\[[0-9a-fA-F:]+\\]|(\\d{1,3}\\.){3}\\d{1,3}|localhost)(:|/|$)"
-    explanation_en: "Fetches a raw IP or your own machine"
-    explanation_zh: "访问裸 IP 或你自己的机器"
-    risk_en: "This fetches from a raw IP address or your own machine instead of a normal website — a pattern often used to probe your computer or private network."
-    risk_zh: "这是在访问一个裸 IP 地址或你自己的电脑，而不是正常网站——常见于探测你本机或内网的行为。"
 
   - id: web-script-host
     category: remote-content
     severity: low
     regex: "://([\\w.-]*\\.)?(raw\\.githubusercontent\\.com|gist\\.githubusercontent\\.com|pastebin\\.com|bit\\.ly|tinyurl\\.com|goo\\.gl)(:|/|$)"
-    explanation_en: "Fetches from a script-hosting or short-link site"
-    explanation_zh: "从脚本托管/短链站点取内容"
-    risk_en: "This fetches from a site that mostly serves raw scripts or shortened links — worth a look at what actually comes back before it gets used."
-    risk_zh: "这是在从脚本托管站或短链服务取内容——拿回来的到底是什么，值得先看一眼再用。"
 
   - id: web-insecure-http
     category: insecure-transport
     severity: low
     regex: "^http://"
-    explanation_en: "Fetches over unencrypted HTTP"
-    explanation_zh: "用明文 HTTP 访问"
-    risk_en: "This fetches over plain unencrypted HTTP — anyone on the network path can read or even alter what comes back."
-    risk_zh: "这是用明文 HTTP 访问——网络链路上的任何人都能看到、甚至篡改传回的内容。"
