@@ -108,7 +108,7 @@ def _llm_cfg(**over):
 
 def test_outcome_off_when_tier2_disabled():
     pl.build_message(_event(HIGH_CMD), _cfg())
-    assert _read_heartbeat()["last"]["tier2"] == "off"
+    assert _read_heartbeat().get("tier2", {}).get("outcome") == "off"
 
 
 def test_outcome_no_credential_is_recorded(monkeypatch):
@@ -116,7 +116,7 @@ def test_outcome_no_credential_is_recorded(monkeypatch):
     monkeypatch.delenv("PL_NO_SUCH_TOKEN", raising=False)
     pl.build_message(_event(HIGH_CMD), _llm_cfg())
     # The exact case that made Tier 2 look broken on a GUI-launched app.
-    assert _read_heartbeat()["last"]["tier2"] == "no_credential"
+    assert _read_heartbeat().get("tier2", {}).get("outcome") == "no_credential"
 
 
 def test_outcome_ok_then_cached(monkeypatch):
@@ -136,9 +136,9 @@ def test_outcome_ok_then_cached(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: Resp())
     cfg = _llm_cfg(api_key_env="PL_TEST_KEY")
     pl.build_message(_event(HIGH_CMD), cfg)
-    assert _read_heartbeat()["last"]["tier2"] == "ok"
+    assert _read_heartbeat().get("tier2", {}).get("outcome") == "ok"
     pl.build_message(_event(HIGH_CMD), cfg)
-    assert _read_heartbeat()["last"]["tier2"] == "cached"
+    assert _read_heartbeat().get("tier2", {}).get("outcome") == "cached"
 
 
 def test_outcome_empty_on_api_failure(monkeypatch):
@@ -149,13 +149,48 @@ def test_outcome_empty_on_api_failure(monkeypatch):
     monkeypatch.setenv("PL_TEST_KEY", "sk-test")
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
-    assert _read_heartbeat()["last"]["tier2"] == "empty"
+    assert _read_heartbeat().get("tier2", {}).get("outcome") == "empty"
 
 
-def test_outcome_off_for_calls_that_never_reach_tier2(monkeypatch):
+def test_benign_call_does_not_overwrite_tier2_status(monkeypatch):
     monkeypatch.setenv("PL_TEST_KEY", "sk-test")
     # A benign call is below the ask gate, so Tier 2 is never consulted — the
     # outcome must not leak from a previous call in the same process.
     pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    before = _read_heartbeat()["tier2"]
     pl.build_message(_event("ls -la"), _llm_cfg(api_key_env="PL_TEST_KEY"))
-    assert _read_heartbeat()["last"]["tier2"] == "off"
+    # The benign call must NOT overwrite the Tier 2 status — otherwise the
+    # status would read "off" almost always and hide the real outcome.
+    assert _read_heartbeat()["tier2"] == before
+
+
+def test_credential_file_is_used_when_env_is_empty(tmp_path, monkeypatch):
+    # The GUI-app case: no env vars anywhere, credential comes from a file.
+    key_file = tmp_path / "api-key"
+    key_file.write_text("# comment line\n\nsk-from-file\n", encoding="utf-8")
+    monkeypatch.delenv("PL_NO_SUCH_KEY", raising=False)
+    cred = pl._resolve_credential({"api_key_env": "PL_NO_SUCH_KEY",
+                                   "api_key_file": str(key_file)})
+    assert cred == ("api_key", "sk-from-file")
+
+
+def test_env_wins_over_file(tmp_path, monkeypatch):
+    key_file = tmp_path / "api-key"
+    key_file.write_text("sk-from-file\n", encoding="utf-8")
+    monkeypatch.setenv("PL_TEST_KEY", "sk-from-env")
+    cred = pl._resolve_credential({"api_key_env": "PL_TEST_KEY",
+                                   "api_key_file": str(key_file)})
+    assert cred == ("api_key", "sk-from-env")
+
+
+def test_missing_or_empty_credential_file_is_not_fatal(tmp_path):
+    empty = tmp_path / "empty"
+    empty.write_text("\n#only a comment\n", encoding="utf-8")
+    assert pl._resolve_credential({"api_key_file": "/nope/missing"}) is None
+    assert pl._resolve_credential({"api_key_file": str(empty)}) is None
+
+
+def test_auth_token_file_maps_to_oauth(tmp_path):
+    f = tmp_path / "token"
+    f.write_text("oauth-token-value\n", encoding="utf-8")
+    assert pl._resolve_credential({"auth_token_file": str(f)}) == ("oauth", "oauth-token-value")

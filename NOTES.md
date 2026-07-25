@@ -548,3 +548,23 @@ different cost tiers.
 - New status strings live in en/zh only; other locales inherit them via the
   per-key fallback — which is the fallback design working as intended.
 - Suite: 301 tests (+5). Version 0.9.1.
+
+## M13 (2026-07-24): credential files, and a Tier 2 status that means something
+
+Two defects surfaced while testing Tier 2 live; both were in the *diagnostics*,
+not the core.
+
+- **Env vars don't reach a GUI-launched app.** Verified with `ps eww` (names
+  only) on the Claude Desktop process: no `ANTHROPIC_*` in its environment —
+  before OR after a full restart, despite `launchctl getenv` returning a value.
+  So `launchctl setenv` is not a reliable channel here. Added
+  `llm.api_key_file` / `llm.auth_token_file`: resolution order is env key, env
+  token, key file, token file; files take the first non-empty, non-`#` line and
+  are never logged. Document chmod 600.
+- **The Tier 2 status line was meaningless.** It was folded into `last`, which
+  every benign call overwrites — and benign calls never reach Tier 2, so it
+  read "off" almost always. Now stored as its own `tier2: {outcome, ts}` block,
+  refreshed ONLY by calls that reached the Tier 2 stage, and printed with an
+  age. New `tier2_never` state for "no risky call has reached it yet".
+  Regression test: a benign call must leave the block untouched.
+- Suite: 305 tests (+4). Version 0.10.0.

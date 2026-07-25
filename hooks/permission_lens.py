@@ -166,9 +166,17 @@ DEFAULT_CONFIG = {
         "model": "claude-haiku-4-5",
         "timeout_seconds": 3.0,          # hard wall-clock deadline for the API call
         # Credential resolution order: api_key_env (x-api-key header), then
-        # auth_token_env (OAuth bearer, e.g. from `ant auth print-credentials`).
+        # auth_token_env (OAuth bearer, e.g. from `ant auth print-credentials`),
+        # then the *_file paths below.
         "api_key_env": "ANTHROPIC_API_KEY",
         "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
+        # Files holding the credential, one line, e.g. "~/.config/permission-lens/api-key".
+        # GUI-launched apps (Claude Desktop) inherit neither shell exports nor,
+        # in practice, `launchctl setenv` — verified 2026-07-24 on this machine,
+        # where the app process had no ANTHROPIC_* vars even after a restart.
+        # A file is the reliable channel there. Keep it chmod 600.
+        "api_key_file": "",
+        "auth_token_file": "",
         "cache_ttl_days": 7,             # 0 disables the response cache
         # Whether to send Write/Edit file CONTENT to the model. Off by default:
         # a command string / URL / path is a far smaller data surface than a
@@ -237,10 +245,10 @@ def _validate_config(raw):
         llm["timeout_seconds"] = _clamped_number(
             llm_raw.get("timeout_seconds"), llm["timeout_seconds"],
             _TIMEOUT_MIN, _TIMEOUT_MAX)
-        if isinstance(llm_raw.get("api_key_env"), str) and llm_raw["api_key_env"].strip():
-            llm["api_key_env"] = llm_raw["api_key_env"].strip()
-        if isinstance(llm_raw.get("auth_token_env"), str) and llm_raw["auth_token_env"].strip():
-            llm["auth_token_env"] = llm_raw["auth_token_env"].strip()
+        for key in ("api_key_env", "auth_token_env", "api_key_file", "auth_token_file"):
+            value = llm_raw.get(key)
+            if isinstance(value, str) and value.strip():
+                llm[key] = value.strip()
         llm["cache_ttl_days"] = _clamped_number(
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
         llm["send_file_content"] = llm_raw.get("send_file_content") is True
@@ -820,16 +828,38 @@ def _one_line(text):
     return " ".join(text.split())
 
 
-def _resolve_credential(llm):
-    """User's own credentials only, from env: API key first, OAuth token second.
+def _read_credential_file(path):
+    """First non-empty line of a credential file, or "" (never logged)."""
+    if not path:
+        return ""
+    try:
+        with open(os.path.expanduser(path), "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    return line
+    except Exception:
+        pass
+    return ""
 
-    Returns ("api_key", value) or ("oauth", value), or None when neither env
-    var is set — subscription-only users without either simply get Tier 1.
+
+def _resolve_credential(llm):
+    """User's own credentials only: env vars first, then the configured files.
+
+    Returns ("api_key", value) or ("oauth", value), or None when nothing is
+    configured — users without either simply get Tier 1. The file route exists
+    because GUI-launched apps see neither shell exports nor launchctl values.
     """
     api_key = os.environ.get(llm.get("api_key_env") or "", "").strip()
     if api_key:
         return ("api_key", api_key)
     token = os.environ.get(llm.get("auth_token_env") or "", "").strip()
+    if token:
+        return ("oauth", token)
+    api_key = _read_credential_file(llm.get("api_key_file"))
+    if api_key:
+        return ("api_key", api_key)
+    token = _read_credential_file(llm.get("auth_token_file"))
     if token:
         return ("oauth", token)
     return None
@@ -1111,15 +1141,20 @@ def record_heartbeat(tool, matches, asked):
         counts[bucket] += 1
         if asked:
             counts["asked"] += 1
+        # Tier 2 status is kept SEPARATELY from `last`, and only refreshed by
+        # calls that actually reached the Tier 2 stage. Benign calls (the vast
+        # majority) never consult Tier 2, so folding it into `last` would show
+        # "off" almost always and hide the real outcome.
+        tier2 = state.get("tier2") if isinstance(state.get("tier2"), dict) else {}
+        if asked:
+            tier2 = {"outcome": _LAST_TIER2["outcome"], "ts": now}
         fresh = {
             "version": 1,
             "updated": now,
             "today": today,
             "counts": counts,
-            "last": {"ts": now, "tool": tool, "severity": severity, "asked": bool(asked),
-                     # Only meaningful when the call reached the Tier 2 stage
-                     # (i.e. it was asked); otherwise it stays "off".
-                     "tier2": _LAST_TIER2["outcome"]},
+            "tier2": tier2,
+            "last": {"ts": now, "tool": tool, "severity": severity, "asked": bool(asked)},
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")

@@ -40,6 +40,7 @@ FALLBACK = {
     "tier2_no_credential": "no credential visible to the hook",
     "tier2_empty": "no answer (timeout or API error)", "tier2_ok": "working",
     "tier2_error": "internal error",
+    "tier2_never": "no risky call has reached it yet",
 }
 
 
@@ -98,9 +99,15 @@ def main():
     # Tier 2 is opt-in and degrades silently by design; without this line
     # "disabled", "no credential" and "network error" are indistinguishable.
     if (pl.load_config().get("llm") or {}).get("enabled"):
-        outcome = last.get("tier2")
-        key = f"tier2_{outcome}" if outcome in pl.TIER2_OUTCOMES else "tier2_off"
-        print(_text(locale, "tier2").format(state=_text(locale, key)))
+        # From the last call that actually reached Tier 2 — benign calls never
+        # do, and they must not overwrite this.
+        t2 = hb.get("tier2") if isinstance(hb.get("tier2"), dict) else {}
+        outcome = t2.get("outcome")
+        key = f"tier2_{outcome}" if outcome in pl.TIER2_OUTCOMES else "tier2_never"
+        state = _text(locale, key)
+        if isinstance(t2.get("ts"), (int, float)):
+            state += f" ({_age(locale, max(0, time.time() - t2['ts']))})"
+        print(_text(locale, "tier2").format(state=state))
 
 
 if __name__ == "__main__":
