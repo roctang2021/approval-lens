@@ -264,7 +264,7 @@ def test_llm_text_appended_last_on_the_single_line(monkeypatch):
     event = {"tool_name": "Bash", "tool_input": {"command": COMMAND}}
     reason = pl.build_message(event, _config())
     assert reason.startswith("🔴")
-    assert reason.endswith("🤖 Pipes a downloaded script into bash.")
+    assert reason.endswith("AI: Pipes a downloaded script into bash.")
     assert "\n" not in reason  # the dialog collapses newlines
 
 

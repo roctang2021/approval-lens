@@ -13,10 +13,16 @@ the plugin weren't installed.
 What a flagged dialog shows (one flowing line):
 
 ```
-🔴 HIGH · This downloads a script and runs it immediately — you never see the
-code, and the site could serve different content than what anyone reviewed.
-🤖 Downloads i.sh from x.example.com and runs it in bash.   ← optional (Tier 2)
+🔴 HIGH · get.docker.com · This downloads a script and runs it immediately —
+you never see the code, and the site could serve different content than what
+anyone reviewed. · AI: Fetches the Docker install script and pipes it to
+bash.                                              ← the AI part is optional
 ```
+
+Severity leads, then the concrete target pulled from the command itself, then
+why this class of operation is risky. Anything after `AI:` is model-written
+(Tier 2, opt-in) — labelled so you can tell generated text from the audited
+rule copy, because only the latter is deterministic.
 
 ## Why
 
@@ -59,7 +65,7 @@ Two tiers. The first is always on; the second is optional and off by default.
 | Tier | What | Cost | Network |
 | --- | --- | --- | --- |
 | **1 — static analyzer** | Bilingual rules match the pending action offline (shell command, URL, or file path) and produce the severity + plain-language sentence. | free | none |
-| **2 — LLM explainer** *(opt-in)* | One `claude-haiku-4-5` call adds a `🤖` plain-language line, using **your own** API credentials. | your API usage | one HTTPS call, 3s hard timeout, SHA256-cached 7 days |
+| **2 — LLM explainer** *(opt-in)* | One `claude-haiku-4-5` call appends an `AI:` line describing what *this* call does, using **your own** API credentials. It never rates the danger — severity stays with the rules. | your API usage | one HTTPS call, 3s hard timeout, SHA256-cached 7 days |
 
 Tier 2 **augments** Tier 1 — it never replaces it. If the model call is
 disabled, times out, errors, or you have no credentials, you still get the full
@@ -317,10 +323,14 @@ MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
 被标记的弹框长这样(一行流式文字):
 
 ```
-🔴 高危 · 这会从网上下载脚本并立刻运行——你看不到代码内容,网站也可能在被
-审查之后换成另一份。
-🤖 从 x.example.com 下载 i.sh 并立即用 bash 执行。   ← 可选(Tier 2)
+🔴 高危 · get.docker.com · 这会从网上下载脚本并立刻运行——你看不到代码内容,
+网站也可能在被审查之后换成另一份。 · AI:下载 Docker 安装脚本并交给 bash
+执行。                                                  ← AI 那段是可选的
 ```
+
+严重度在最前,紧接着是从命令里提取出的具体目标,然后才是"这类操作为什么危险"。
+`AI:` 之后的内容由模型生成(Tier 2,需手动开启),明确标注是为了让你分得清哪部分
+是生成的、哪部分是审计过的规则文案——只有后者是确定性的。
 
 ## 为什么
 
@@ -355,7 +365,7 @@ hook 挂在 `PreToolUse` 上。对被标记的调用,它返回 `permissionDecisi
 | 层级 | 内容 | 费用 | 网络 |
 | --- | --- | --- | --- |
 | **Tier 1 — 静态分析** | 双语规则离线匹配待批操作(shell 命令 / URL / 文件路径),产出严重度 + 大白话解释句。 | 免费 | 无 |
-| **Tier 2 — 大模型解释**(需手动开启) | 一次 `claude-haiku-4-5` 调用,用**你自己的**凭据补一行 `🤖` 大白话。 | 记你自己的 API 账户 | 一次 HTTPS 调用,3 秒硬超时,SHA256 缓存 7 天 |
+| **Tier 2 — 大模型解释**(需手动开启) | 一次 `claude-haiku-4-5` 调用,用**你自己的**凭据追加一行 `AI:`,说明**这一条**具体在做什么。它不评判危险程度——严重度始终归规则。 | 记你自己的 API 账户 | 一次 HTTPS 调用,3 秒硬超时,SHA256 缓存 7 天 |
 
 Tier 2 是**追加**,绝不替代 Tier 1。模型调用未开启/超时/出错/没凭据时,你依然会看到
 完整的 Tier 1 解释。模型**只看到最小主体**——shell 命令、URL 或文件路径(Write/Edit 的

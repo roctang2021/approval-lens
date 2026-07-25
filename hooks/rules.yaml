@@ -113,10 +113,19 @@ rules:
     severity: low
     regex: '(^|[\s/=@''"])\.env(\.[\w.-]+)?(\s|$|[''"])'
 
+  # Split by whether the secret itself is printed: `dump-keychain` empties the
+  # whole keychain, and -w/-g make a lookup print the password. A plain lookup
+  # of one named item returns metadata only — flagging it 🔴 was a false alarm
+  # (found 2026-07-25 when the Tier 2 line contradicted the rule and was right).
   - id: macos-keychain-dump
     category: credential-access
     severity: high
-    regex: '\bsecurity\s+(find|dump)-(generic|internet)-password\b|\bsecurity\s+dump-keychain\b'
+    regex: '\bsecurity\s+dump-keychain\b|\bsecurity\s+(find|dump)-(generic|internet)-password\b[^|;&]*(\s-[a-zA-Z]*[wg]\b)'
+
+  - id: macos-keychain-lookup
+    category: credential-access
+    severity: medium
+    regex: '\bsecurity\s+(find|dump)-(generic|internet)-password\b(?![^|;&]*\s-[a-zA-Z]*[wg]\b)'
 
   - id: linux-keyring-access
     category: credential-access

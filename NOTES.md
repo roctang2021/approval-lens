@@ -568,3 +568,40 @@ not the core.
   age. New `tier2_never` state for "no risky call has reached it yet".
   Regression test: a benign call must leave the block untouched.
 - Suite: 305 tests (+4). Version 0.10.0.
+
+## M14 (2026-07-25): who the reader should believe
+
+Three owner findings from live use, all traceable to one root cause: Tier 1 and
+Tier 2 were both answering "how dangerous is this?".
+
+- **Two verdicts on one dialog.** Tier 2 wrote "风险不大" beside Tier 1's
+  🔴 高危 on the same line. The reader had no way to pick. Root cause was the
+  prompt: it asked for "what it does and any notable risk", which is the rules'
+  job. Rewrote all six locales' llm_prompts: the model is told a rule engine
+  has ALREADY rated the risk, must not repeat or re-rate it, and must never
+  say safe/unsafe or advise approving. Its job is the part the rules cannot
+  know — what THIS instance concretely does (which host, which file, which
+  flags). Reader now gets evidence next to the verdict instead of a competing
+  verdict, and the fallible layer stays clearly subordinate.
+  - Why not let the model adjust severity: context and command text are
+    attacker-reachable, so a model that can lower severity is a model that can
+    be talked into silence. Tested adversarially since M11.
+- **The rule was wrong, and the model was right.** `macos-keychain-dump`
+  lumped `dump-keychain` (empties the whole keychain) together with
+  `find-generic-password -s X` (returns metadata for one named item). Split by
+  whether the secret is actually printed: `dump-keychain` and lookups carrying
+  `-w`/`-g` stay high; a plain lookup is now `macos-keychain-lookup` at medium
+  — so it no longer forces a dialog at the default gate. A persistent
+  rule/model mismatch is a rule bug; this is the first one it caught.
+- **The dialog line had no hierarchy** and leaked internal markers: 📍 and 🤖
+  were unexplained emoji standing in for "target" and "model-written". New
+  layout, owner-picked: `{severity} · {target} · {why this class is risky}`
+  plus `· AI: {facts}` when Tier 2 is on. Severity leads (decides whether to
+  keep reading), the extracted target comes second (most decision-relevant
+  fact, lands where the eye goes), model text is last behind an explicit,
+  localized `AI:` prefix — the reader must be able to tell generated text from
+  audited copy. `ai_label` carries its own punctuation per locale
+  (en "AI: ", zh "AI：", fr "IA : ").
+- Suite: 315 tests (+8): prompts must keep the no-rating clauses, every locale
+  must ship an `ai_label`, layout assertions moved from emoji markers to
+  positional parts. Version 0.11.0.

@@ -80,6 +80,13 @@ commands:
   - command: "security dump-keychain -d login.keychain"
     rule: macos-keychain-dump
     severity: high
+  - command: "security find-generic-password -w -s GitHub"
+    rule: macos-keychain-dump
+    severity: high
+  # Without -w/-g a lookup returns metadata, not the password — medium, not high.
+  - command: "security find-generic-password -s GitHub"
+    rule: macos-keychain-lookup
+    severity: medium
   - command: "secret-tool search service github"
     rule: linux-keyring-access
     severity: medium

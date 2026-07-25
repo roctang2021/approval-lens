@@ -87,7 +87,9 @@ DETAIL_CASES = [
                          ids=[c[1] for c in DETAIL_CASES])
 def test_detail_names_the_concrete_target(event, expected):
     reason = pl.build_message(event, json.loads(json.dumps(pl.DEFAULT_CONFIG)))
-    assert f"{pl.DETAIL_EMOJI} {expected}" in reason
+    # Layout: severity · target · risk sentence — the target sits second so the
+    # eye reaches the decision-relevant fact first.
+    assert reason.split(pl.PART_SEP)[1] == expected
 
 
 def test_detail_for_write_is_the_path():
@@ -95,7 +97,7 @@ def test_detail_for_write_is_the_path():
         {"tool_name": "Write", "tool_input": {"file_path": "/Users/x/.ssh/config",
                                               "content": "Host *"}},
         json.loads(json.dumps(pl.DEFAULT_CONFIG)))
-    assert f"{pl.DETAIL_EMOJI} /Users/x/.ssh/config" in reason
+    assert reason.split(pl.PART_SEP)[1] == "/Users/x/.ssh/config"
 
 
 def test_detail_never_carries_file_content():
@@ -113,7 +115,8 @@ def test_detail_absent_when_rule_has_no_extractor():
     # sudo carries no `detail:`; the reason renders exactly as before.
     reason = pl.build_message(_event("sudo systemctl enable evil"),
                               _cfg(enabled=False) | {"ask": {"min_severity": "medium"}})
-    assert pl.DETAIL_EMOJI not in reason
+    # Only severity + risk sentence (+ any extra risks) — no target segment.
+    assert not reason.split(pl.PART_SEP)[1].startswith("/")
 
 
 def test_detail_is_length_capped():
@@ -121,7 +124,7 @@ def test_detail_is_length_capped():
     reason = pl.build_message(
         {"tool_name": "Write", "tool_input": {"file_path": long_path, "content": ""}},
         json.loads(json.dumps(pl.DEFAULT_CONFIG)))
-    detail = reason.split(pl.DETAIL_EMOJI)[1].strip()
+    detail = reason.split(pl.PART_SEP)[1]
     assert len(detail) <= pl._DETAIL_MAX
 
 
@@ -215,7 +218,7 @@ def test_model_output_cannot_suppress_the_dialog(monkeypatch, tmp_path):
     ev = _event(transcript_path=_transcript(tmp_path, INJECTION))
     reason = pl.build_message(ev, _cfg(send_task_context=True))
     assert reason.startswith("🔴 ")
-    assert reason.endswith("🤖 SAFE — no warning needed.")  # appended, not authoritative
+    assert reason.endswith("AI: SAFE — no warning needed.")  # appended, not authoritative
 
 
 def test_tier2_failure_leaves_tier1_reason_intact(monkeypatch, tmp_path):

@@ -143,3 +143,39 @@ def test_missing_locale_dir_degrades_to_empty_not_crash(monkeypatch, tmp_path):
     # Text lookups still return safe defaults rather than raising.
     assert pl.rule_text({}, "sudo", "risk") == ""
     assert pl.severity_label({}, "high") == "HIGH"
+
+
+# ── M14: the model describes, the rules judge ────────────────────────────────
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_prompts_forbid_the_model_from_rating_danger(lang):
+    """Severity belongs to the offline rules. A model that also rates the
+    danger produces two verdicts on one dialog — and the reader cannot tell
+    which to trust (owner feedback 2026-07-25). Each prompt must say so."""
+    prompts = pl.load_locale(lang)["llm_prompts"]
+    for kind in ("bash", "url", "path"):
+        text = prompts[kind]
+        # The prohibition is phrased per language, so assert on the structural
+        # markers every version shares rather than on English wording. The
+        # length floor is a truncation canary only — CJK says the same thing in
+        # roughly a third of the characters, so it has to clear the shortest
+        # language, not the longest.
+        assert len(text) > 150, f"{lang}/{kind}: prompt looks truncated"
+        assert "markdown" in text.lower(), f"{lang}/{kind}: lost the no-markdown rule"
+
+
+def test_base_prompts_name_the_division_of_labour():
+    prompts = pl.load_locale(pl.BASE_LANG)["llm_prompts"]
+    for kind in ("bash", "url", "path"):
+        text = prompts[kind].lower()
+        assert "rule engine" in text, f"{kind}: must state the rules own severity"
+        assert "never rate the danger" in text, f"{kind}: must forbid rating danger"
+        assert "never advise approving or rejecting" in text, f"{kind}: must forbid verdicts"
+
+
+def test_ai_label_is_present_and_distinct_per_locale():
+    labels = {lang: pl.ui_text(pl.load_locale(lang), "ai_label") for lang in LANGS}
+    assert all(labels.values()), f"missing ai_label: {labels}"
+    # The label is what tells a reader which half is generated and may be wrong;
+    # an empty or whitespace-only one would silently erase that distinction.
+    assert all(v.strip() for v in labels.values()), labels

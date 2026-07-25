@@ -80,6 +80,9 @@ rules:
   macos-keychain-dump:
     explanation: "Extrait les mots de passe enregistrés du Trousseau"
     risk: "Cette commande extrait en clair les mots de passe enregistrés dans le Trousseau de votre Mac — tout ce qui y est stocké peut être copié."
+  macos-keychain-lookup:
+    explanation: "Consulte une entrée du trousseau"
+    risk: "Ceci consulte une entrée précise du trousseau de votre Mac : à lui seul, il renvoie les informations de l'entrée et non le mot de passe, mais il confirme que cette entrée existe et à quel compte elle appartient."
   linux-keyring-access:
     explanation: "Lit les mots de passe enregistrés du trousseau"
     risk: "Cette commande lit les mots de passe enregistrés dans le trousseau du bureau — les identifiants qui y sont stockés peuvent être copiés."
@@ -186,6 +189,7 @@ rules:
     explanation: "Le contenu écrit télécharge et exécute du code"
     risk: "Le texte en cours d'écriture contient une instruction qui télécharge puis exécute du code — chaque fois que ce fichier sera lancé, il ira chercher du code sur Internet et l'exécutera sans relecture."
 ui:
+  ai_label: "IA : "
   severity_high: ÉLEVÉ
   severity_medium: MOYEN
   severity_low: FAIBLE
@@ -216,9 +220,9 @@ verbs:
   docker: Exécute une commande Docker
   kubectl: Exécute une commande kubectl
 llm_prompts:
-  bash: "Vous expliquez des commandes shell affichées dans une boîte de dialogue d'autorisation. Le message utilisateur est exactement une commande shell. Répondez en français, en 1 à 2 courtes phrases de texte brut compréhensibles par un non-expert, en indiquant ce que fait la commande et tout risque notable. Des mots simples plutôt que du jargon. Pas de markdown, pas de préambule, pas de bloc de code."
-  url: "Vous expliquez une récupération web affichée dans une boîte de dialogue d'autorisation. Le message utilisateur est exactement une URL qu'un agent de code s'apprête à récupérer. Répondez en français, en 1 à 2 courtes phrases de texte brut, en indiquant ce que cette récupération va faire et tout risque notable (hôte non fiable, identifiants ou secrets dans l'URL, cible interne ou pointant vers la machine elle-même). Pas de markdown, pas de préambule."
-  path: "Vous expliquez une écriture ou une modification de fichier affichée dans une boîte de dialogue d'autorisation. Le message utilisateur est le CHEMIN du fichier cible qu'un agent de code s'apprête à écrire ou à modifier, éventuellement suivi, après une ligne vide, du nouveau contenu. Répondez en français, en 1 à 2 courtes phrases de texte brut, en indiquant ce qu'est ce fichier ou cet emplacement et tout risque notable lié à sa modification. Pas de markdown, pas de préambule."
+  bash: 'Vous décrivez une commande shell affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement une commande. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type d''opération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce que fait CETTE commande précise. Répondez en 1 ou 2 phrases courtes en français, compréhensibles par un non-spécialiste, en nommant les éléments concrets (quel serveur, quel fichier ou chemin, quelles options changent le résultat). N''évaluez jamais le danger, ne dites jamais si c''est sûr, risqué ou inoffensif, et ne conseillez jamais d''accepter ou de refuser. Des mots simples, pas de jargon. Pas de markdown, pas de préambule, pas de blocs de code.'
+  url: 'Vous décrivez une récupération web affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement l''URL qu''un agent s''apprête à récupérer. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type de récupération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce qu''est CETTE URL précise. Répondez en 1 ou 2 phrases courtes en français, en nommant le serveur et ce qu''il semble fournir, ainsi que les éléments concrets contenus dans l''URL elle-même (un chemin, un paramètre de requête, un identifiant intégré). N''évaluez jamais le danger, ne dites jamais si c''est sûr, et ne conseillez jamais d''accepter ou de refuser. Pas de markdown, pas de préambule.'
+  path: 'Vous décrivez une écriture ou une modification de fichier affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est le CHEMIN du fichier cible, éventuellement suivi, après une ligne vide, du nouveau contenu. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque d''une écriture à ce type d''emplacement : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce qu''est CE fichier précis et ce que fait la modification. Répondez en 1 ou 2 phrases courtes en français. N''évaluez jamais le danger, ne dites jamais si c''est sûr, et ne conseillez jamais d''accepter ou de refuser. Pas de markdown, pas de préambule.'
 status:
   none: "aucune correspondance"
   asked: "dialogue forcé"

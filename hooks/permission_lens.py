@@ -668,33 +668,41 @@ def neutral_summary_path(file_path, label_key, lang=LANG):
 # ── reason formatting ─────────────────────────────────────────────────────────
 #
 # The reason renders on the permission dialog as ONE flowing line (the dialog
-# collapses \n — probe-verified 2026-07-19). Each part starts with an emoji, so
-# emojis double as visual separators: 🔴 headline · 🟡 extra risk · 🤖 model line.
+# collapses \n — probe-verified 2026-07-19), so hierarchy has to come from
+# ordering and separators rather than layout:
+#
+#   {🔴 severity} · {concrete target} · {why this class is risky} · AI: {facts}
+#
+# Severity leads because it decides whether to keep reading; the target comes
+# next because "which host / which file" is the most decision-relevant fact and
+# deserves the position the eye lands on first. Model text always comes last,
+# behind an explicit "AI:" label — the reader must be able to tell audited rule
+# copy from generated text, since only the former is deterministic. An
+# unexplained 🤖/📍 emoji did not carry that meaning (owner feedback 2026-07-25).
 
-LLM_EMOJI = "🤖"
-DETAIL_EMOJI = "📍"  # marks the concrete target; no localized label needed
+PART_SEP = " · "
 
 
 def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None,
                   detail=""):
     """Matched rules -> the single-line permissionDecisionReason.
 
-    Requires at least one match (the ask gate guarantees it). The headline is
-    the top rule's `risk` sentence — written in the locale as a self-contained
-    plain-language sentence: what the call does AND why it matters, no jargon.
-    `detail` is the concrete target pulled from the command itself (see
-    extract_detail); it needs no translation, so it rides on the 📍 marker
-    rather than a localized label.
+    Requires at least one match (the ask gate guarantees it). The risk sentence
+    is the top rule's `risk` copy — a self-contained plain-language sentence:
+    what this class of call does AND why it matters, no jargon. `detail` is the
+    concrete target pulled from the command itself (see extract_detail).
     """
     locale = load_locale(lang)
     top = matches[0]
     sev = top["severity"]
     emoji = SEVERITY_EMOJI.get(sev, INFO_EMOJI)
-    parts = [f"{emoji} {severity_label(locale, sev)} · {rule_text(locale, top['id'], 'risk')}"]
+    parts = [f"{emoji} {severity_label(locale, sev)}"]
     if detail:
-        parts.append(f"{DETAIL_EMOJI} {detail}")
+        parts.append(detail)
+    parts.append(rule_text(locale, top["id"], "risk"))
     # Up to two additional distinct risks (dedupe by category to avoid near-dupes);
-    # extras use the short `explanation` phrase, not the full sentence.
+    # extras use the short `explanation` phrase and keep their own severity dot,
+    # which is what distinguishes them from the headline at a glance.
     seen = {top["category"]}
     extras = 0
     for rule in matches[1:]:
@@ -709,8 +717,10 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     # Tier 2 goes last so truncation always prefers the deterministic Tier 1
     # content over the model-written extra.
     if llm_text:
-        parts.append(f"{LLM_EMOJI} {llm_text}")
-    return _truncate(" ".join(_one_line(p) for p in parts), max_chars)
+        # The prefix carries its own punctuation and spacing so each locale can
+        # follow its own convention (en "AI: ", zh "AI：", fr "IA : ").
+        parts.append(ui_text(locale, "ai_label", "AI: ") + llm_text)
+    return _truncate(PART_SEP.join(_one_line(p) for p in parts), max_chars)
 
 
 def passes_threshold(matches, min_severity):
