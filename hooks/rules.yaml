@@ -10,6 +10,12 @@
 #   scope         whole (default) = match full command string
 #                 segment         = match any single pipeline stage
 #                 (ignored for predicate rules)
+#   verb          OPTIONAL guard: the program this rule is about. The rule can
+#                 only fire if some pipeline stage actually RUNS it (fullmatched
+#                 against the stage's verb; wrapper stages like `sudo …` are
+#                 scanned in full). Without it a regex on the raw command text
+#                 cannot tell `curl x | bash` from `echo "curl x | bash"`.
+#                 Add one to every rule anchored on a specific program.
 #
 # This file holds MATCHING LOGIC ONLY. The user-visible text for each rule
 # lives in hooks/locales/<lang>.yaml under `rules.<id>` — adding a rule here
@@ -38,27 +44,32 @@ rules:
     severity: high
     regex: '\bdd\b[^|;&]*\bof=/dev/'
     detail: device
+    verb: 'dd'
 
   - id: mkfs
     category: destructive-fs
     severity: high
     regex: '\bmkfs(\.\w+)?\b'
     detail: device
+    verb: 'mkfs(\..+)?'
 
   - id: shred
     category: destructive-fs
     severity: medium
     regex: '\bshred\b'
+    verb: 'shred'
 
   - id: chmod-chown-recursive
     category: destructive-fs
     severity: medium
     regex: '\bch(mod|own)\b[^|;&]*(\s-[a-zA-Z]*R[a-zA-Z]*|\s--recursive)\b'
+    verb: 'ch(mod|own)'
 
   - id: chmod-world-writable
     category: destructive-fs
     severity: medium
     regex: '\bchmod\b[^|;&]*\b(777|a\+w|o\+w)\b'
+    verb: 'chmod'
 
   # ── remote code execution ─────────────────────────────────────────────────
   - id: pipe-to-shell
@@ -66,18 +77,21 @@ rules:
     severity: high
     regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
     detail: url_host
+    verb: 'curl|wget|fetch'
 
   - id: shell-from-process-sub
     category: remote-exec
     severity: high
     regex: '\b(bash|sh|zsh|dash|ksh)\b\s*<\(\s*(curl|wget|fetch)\b'
     detail: url_host
+    verb: 'curl|wget|fetch'
 
   - id: curl-pipe-interpreter
     category: remote-exec
     severity: high
     regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
     detail: url_host
+    verb: 'curl|wget|fetch'
 
   # ── data exfiltration ─────────────────────────────────────────────────────
   - id: curl-upload-file
@@ -85,17 +99,20 @@ rules:
     severity: high
     regex: '\b(curl|wget)\b[^|;&]*(\s-d\s*@|--data(-binary|-raw|-urlencode)?\s*@|-F\s+\S*=@|\s-T\s+|--upload-file\b)'
     detail: url_host
+    verb: 'curl|wget'
 
   - id: file-piped-to-network
     category: exfiltration
     severity: high
     regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|\s*(curl|wget|nc|ncat|netcat|socat)\b'
     detail: url_host
+    verb: 'cat|tar|zip|gzip|dd|head|tail'
 
   - id: netcat-outbound
     category: exfiltration
     severity: medium
     regex: '\b(nc|ncat|netcat)\b[^|;&]*<\s*\S'
+    verb: 'nc|ncat|netcat'
 
   # ── credential access ─────────────────────────────────────────────────────
   - id: ssh-key-access
@@ -121,16 +138,19 @@ rules:
     category: credential-access
     severity: high
     regex: '\bsecurity\s+dump-keychain\b|\bsecurity\s+(find|dump)-(generic|internet)-password\b[^|;&]*(\s-[a-zA-Z]*[wg]\b)'
+    verb: 'security'
 
   - id: macos-keychain-lookup
     category: credential-access
     severity: medium
     regex: '\bsecurity\s+(find|dump)-(generic|internet)-password\b(?![^|;&]*\s-[a-zA-Z]*[wg]\b)'
+    verb: 'security'
 
   - id: linux-keyring-access
     category: credential-access
     severity: medium
     regex: '\b(secret-tool|gnome-keyring-daemon|kwalletcli)\b'
+    verb: 'secret-tool|gnome-keyring-daemon|kwalletcli'
 
   - id: shell-history-access
     category: credential-access
@@ -143,86 +163,102 @@ rules:
     severity: high
     regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
     detail: url_host
+    verb: 'base64'
 
   - id: hex-decode-exec
     category: obfuscation
     severity: high
     regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|\s*(bash|sh|zsh|python[0-9.]*)\b'
     detail: url_host
+    verb: 'xxd|od|printf'
 
   - id: eval-dynamic
     category: obfuscation
     severity: medium
     regex: '(^|[\s;&|(`])eval\s+[''"$`]'
+    verb: 'eval'
 
   # ── privilege escalation ──────────────────────────────────────────────────
   - id: sudo
     category: privilege
     severity: medium
     regex: '(^|[\s;&|(])sudo\b'
+    verb: 'sudo'
 
   - id: su-switch-user
     category: privilege
     severity: medium
     regex: '(^|[\s;&|(])su\s+[-\w]'
+    verb: 'su'
 
   # ── dangerous git ─────────────────────────────────────────────────────────
   - id: git-push-force
     category: git-dangerous
     severity: medium
     regex: '\bgit\b[^;&|]*\bpush\b[^;&|]*(--force(?!-with-lease)\b|\s-f\b)'
+    verb: 'git'
 
   - id: git-reset-hard
     category: git-dangerous
     severity: medium
     regex: '\bgit\b[^;&|]*\breset\b[^;&|]*--hard\b'
+    verb: 'git'
 
   - id: git-clean-force
     category: git-dangerous
     severity: medium
     regex: '\bgit\b[^;&|]*\bclean\b[^;&|]*-[a-zA-Z]*f'
+    verb: 'git'
 
   - id: git-remote-change
     category: git-dangerous
     severity: low
     regex: '\bgit\b[^;&|]*\bremote\b[^;&|]*\b(set-url|add)\b'
+    verb: 'git'
 
   # ── publishing / irreversible ─────────────────────────────────────────────
   - id: npm-publish
     category: publish-irreversible
     severity: medium
     regex: '\bnpm\s+publish\b'
+    verb: 'npm'
 
   - id: pypi-upload
     category: publish-irreversible
     severity: medium
     regex: '\btwine\s+upload\b|\bpython[0-9.]*\s+-m\s+twine\s+upload\b'
+    verb: 'twine|python[0-9.]*'
 
   - id: iac-destroy
     category: publish-irreversible
     severity: high
     regex: '\b(terraform|terragrunt|pulumi|cdk)\s+destroy\b'
+    verb: 'terraform|terragrunt|pulumi|cdk'
 
   - id: cloud-cli-delete
     category: publish-irreversible
     severity: medium
     regex: '\b(aws|gcloud|az)\b[^;&|]*\b(delete|rm|destroy|terminate|remove)\b'
+    verb: 'aws|gcloud|az'
 
   # ── persistence / system modification ─────────────────────────────────────
   - id: crontab-modify
     category: persistence
     severity: medium
     regex: '\bcrontab\b(?!\s+-l)'
+    verb: 'crontab'
 
   - id: systemd-service
     category: persistence
     severity: medium
     regex: '\bsystemctl\s+(enable|disable|start|stop|mask|unmask)\b'
+    verb: 'systemctl'
 
   - id: launchd-modify
     category: persistence
     severity: medium
     regex: '\blaunchctl\s+(load|bootstrap|enable|submit)\b'
+    verb: 'launchctl'
 
   - id: shell-rc-append
     category: persistence

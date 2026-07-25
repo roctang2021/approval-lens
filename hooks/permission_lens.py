@@ -563,6 +563,10 @@ def _load_rules_from(path, default_field="path"):
             "category": raw.get("category", ""),
             "severity": raw.get("severity", "low"),
             "regex": re.compile(raw["regex"]) if raw.get("regex") else None,
+            # Optional guard: the program this rule is about. Fullmatched against
+            # each argv token's basename, so it is anchored no matter how the
+            # YAML writes it. See _verb_matches.
+            "verb": re.compile(raw["verb"]) if raw.get("verb") else None,
             "predicate": raw.get("predicate"),
             "scope": raw.get("scope", "whole"),
             # which subject string a string-rule matches against (see match_string_rules)
@@ -598,7 +602,52 @@ def analyze(parsed, rules=None):
     return _sort_by_severity(matches)
 
 
+# Programs that run another program: their own name hides the real verb, so a
+# stage starting with one is scanned in full. Deliberately excludes anything
+# whose argument could look like a command name to a reader (`watch`, `sh -c`).
+_VERB_WRAPPERS = {"sudo", "doas", "env", "nohup", "nice", "timeout", "stdbuf",
+                  "command", "exec", "xargs"}
+
+
+def _command_names(sc):
+    """Program names in COMMAND position for one pipeline stage.
+
+    Normally just the stage's own verb: in `echo mkfs`, `mkfs` is an argument
+    being printed, not a program being run. When the stage starts with a
+    wrapper (`sudo curl …`, `env X=1 curl …`, `nice -n 5 curl …`) the wrapper's
+    own name tells us nothing, so every token is considered — the wrapper is
+    itself proof that a command is being invoked.
+    """
+    if not sc.name:
+        return []
+    if sc.name in _VERB_WRAPPERS:
+        return [os.path.basename(tok) for tok in sc.argv]
+    return [sc.name]
+
+
+def _verb_matches(rule, parsed):
+    """Does the command actually INVOKE the program this rule is about?
+
+    Regexes run against the raw command text, so `echo "curl … | bash"` and
+    `git commit -m "fix the curl | bash path"` used to fire 🔴 — the analyzer
+    knew better (its quote-aware split sees a single `echo` stage) but the
+    rules threw that away. A rule with a `verb:` only fires when some stage
+    actually runs that program.
+
+    Quote safety comes for free: a quoted run of words survives shlex as ONE
+    token, so an anchored fullmatch can never see the `curl` inside it.
+    """
+    verb = rule.get("verb")
+    if not verb:
+        return True
+    return any(verb.fullmatch(name)
+               for sc in parsed.simple_commands
+               for name in _command_names(sc))
+
+
 def _rule_matches(rule, parsed):
+    if not _verb_matches(rule, parsed):
+        return False
     if rule["predicate"]:
         fn = PREDICATES.get(rule["predicate"])
         return bool(fn and fn(parsed))

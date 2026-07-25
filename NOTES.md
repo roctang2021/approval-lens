@@ -623,3 +623,40 @@ Fix is typographic demotion plus softer wording, not removal:
   ("立刻运行——你看不到代码内容"), so a ` — ` separator collided with them. A
   first attempt at a dash was replaced for exactly that reason.
 - Version 0.11.1, 316 tests.
+
+## M15 (2026-07-25): naming a dangerous pattern is not running it
+
+Owner asked the sharpest possible question about a live dialog — "should the
+user click Allow or Deny?" — and the honest answer was **Allow**: the command
+was `echo "curl … | bash "`, which prints a string. Every layer on that dialog
+was wrong (🔴, the target, the rule sentence, and the cached AI note).
+
+- **Root cause**: `scope: whole` rules regex the RAW command text, discarding
+  what the parser already knows. `Parsed('echo "curl … | bash "')` yields a
+  single `echo` stage — the quote-aware splitter never saw a pipe. The rules
+  threw that away and matched the text inside the quotes.
+- **Not a test artifact.** `git commit -m "fix the curl | bash install path"`
+  — an ordinary everyday command — fired 🔴 HIGH. This is the cry-wolf failure
+  mode that teaches users to ignore the tool.
+- **The fix direction already existed in the codebase**: `rm-rf-*` are
+  predicates over the parsed structure, which is exactly why
+  `grep -n "rm -rf /" deploy.sh` never false-fired. The regex rules simply
+  never got the same treatment.
+- **`verb:` guard** (new optional rule field, 30 rules annotated): the rule can
+  only fire when some stage actually runs that program. `_command_names()`
+  returns a stage's own verb — so `mkfs` in `echo mkfs` is an argument, not an
+  invocation — and falls back to scanning every token when the stage starts
+  with a wrapper (`sudo` / `env` / `nice` / `nohup` / `timeout` / …), whose own
+  name would otherwise hide the real verb. Quote safety is free: a quoted run
+  of words survives shlex as one token, so an anchored fullmatch can never see
+  the `curl` inside it. Patterns are written unanchored in YAML and anchored by
+  `fullmatch`, so a rule author cannot leak a substring match (tested).
+- **Not guarded** (no single program to anchor on — path/redirect shaped):
+  ssh-key-access, aws-creds-access, dotenv-access, shell-history-access,
+  shell-rc-append. `echo "~/.ssh/id_rsa"` can still false-fire; these want
+  predicates over the parsed redirect/argument structure, left as follow-up.
+- **Gap noticed, not closed**: plain-text obfuscation — `echo "<command>" | bash`
+  — has no rule. base64 and hex variants are covered; the plaintext one isn't.
+  Separate rule, deliberately not folded into this change.
+- Suite: 346 tests (+30): 7 quoted-mention entries in the benign corpus, plus
+  invocation/wrapper/anchoring tests. Version 0.12.0.

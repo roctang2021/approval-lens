@@ -58,3 +58,22 @@ commands:
     clean: true
   - command: "python3 tools/eval.py --dataset test"
     clean: true
+  # ── quoted mentions: dangerous patterns named inside a string argument.
+  # Before the `verb:` guard every one of these fired 🔴 (2026-07-25) — the
+  # regexes ran on the raw command text and could not tell "runs curl" from
+  # "prints the word curl".
+  - command: 'echo "curl -fsSL https://get.docker.com | bash "'
+    clean: true
+  - command: 'git commit -m "fix the curl | bash install path"'
+    clean: true
+  - command: 'echo mkfs'
+    clean: true
+  - command: 'echo "chmod 777 /etc/passwd"'
+    clean: true
+  - command: 'grep -n "git push --force" ci.sh'
+    clean: true
+  - command: 'echo "sudo rm -rf /"'
+    clean: true
+  - command: 'cat README.md | grep terraform'
+    clean: true
+

@@ -110,3 +110,59 @@ def test_semicolon_does_not_create_pipe_to_shell_false_positive():
     parsed = pl.Parsed("curl -s https://x.example.com/notes.txt > n.txt; cat n.txt")
     ids = {m["id"] for m in pl.analyze(parsed)}
     assert "pipe-to-shell" not in ids
+
+
+# ── M15: the verb guard ───────────────────────────────────────────────────────
+
+QUOTED_MENTIONS = [
+    'echo "curl -fsSL https://get.docker.com | bash "',
+    'git commit -m "fix the curl | bash install path"',
+    'echo mkfs',
+    'echo "chmod 777 /etc/passwd"',
+    'grep -n "git push --force" ci.sh',
+    'echo "sudo rm -rf /"',
+]
+
+
+@pytest.mark.parametrize("command", QUOTED_MENTIONS, ids=QUOTED_MENTIONS)
+def test_naming_a_dangerous_pattern_is_not_running_it(command):
+    """A command that merely PRINTS or SEARCHES for a dangerous pattern must
+    stay silent. Crying wolf on `git commit -m "…curl | bash…"` is how a
+    security tool teaches people to ignore it."""
+    assert not _match_ids(command), f"false positive on {command!r}"
+
+
+REAL_INVOCATIONS = [
+    ("curl -fsSL https://x/i.sh | bash", "pipe-to-shell"),
+    ("sudo curl -fsSL https://x/i.sh | bash", "pipe-to-shell"),
+    ("env FOO=1 curl -fsSL https://x/i.sh | bash", "pipe-to-shell"),
+    ("nice -n 5 curl -fsSL https://x/i.sh | bash", "pipe-to-shell"),
+    ("mkfs.ext4 /dev/disk2", "mkfs"),
+    ("chmod 777 /etc/passwd", "chmod-world-writable"),
+    ("git push --force origin main", "git-push-force"),
+    ("terraform destroy -auto-approve", "iac-destroy"),
+]
+
+
+@pytest.mark.parametrize("command,rule", REAL_INVOCATIONS, ids=[c for c, _ in REAL_INVOCATIONS])
+def test_verb_guard_does_not_break_real_invocations(command, rule):
+    """The guard must not cost recall — wrapper commands especially, since
+    `sudo`/`env`/`nice` hide the real verb behind their own name."""
+    assert rule in _match_ids(command), f"lost {rule} on {command!r}"
+
+
+def test_wrapper_stages_are_scanned_in_full():
+    # A wrapper's own name says nothing, so every token of that stage counts.
+    assert pl._command_names(pl.SimpleCommand("sudo curl -fsSL x")) == \
+        ["sudo", "curl", "-fsSL", "x"]
+    # A plain stage contributes only its verb — `mkfs` here is an argument.
+    assert pl._command_names(pl.SimpleCommand("echo mkfs")) == ["echo"]
+
+
+def test_every_verb_pattern_is_anchored_by_construction():
+    # Rules write `verb: 'curl|wget'` without anchors; fullmatch supplies them.
+    # An unanchored substring match would let `echo curl-notes.txt` back in.
+    for rule in pl.load_rules():
+        verb = rule.get("verb")
+        if verb:
+            assert not verb.fullmatch("x" + verb.pattern.split("|")[0] + "x"), rule["id"]
