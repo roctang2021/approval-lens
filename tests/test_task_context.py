@@ -228,3 +228,13 @@ def test_tier2_failure_leaves_tier1_reason_intact(monkeypatch, tmp_path):
     ev = _event(transcript_path=_transcript(tmp_path, "install docker"))
     reason = pl.build_message(ev, _cfg(send_task_context=True))
     assert reason.startswith("🔴 ") and "🤖" not in reason
+
+
+def test_device_detail_keeps_hyphens_and_dots():
+    """Real device paths contain both — /dev/mapper/vg-root,
+    /dev/disk/by-id/ata-X, /dev/nvme0n1p2. Truncating at the first hyphen put
+    a WRONG device on the dialog, which is worse than showing none."""
+    for path in ("/dev/mapper/vg-root", "/dev/disk/by-id/ata-Samsung", "/dev/nvme0n1p2"):
+        reason = pl.build_message(_event(f"dd if=/dev/zero of={path}"),
+                                  json.loads(json.dumps(pl.DEFAULT_CONFIG)))
+        assert reason.split(pl.PART_SEP)[1] == path, reason

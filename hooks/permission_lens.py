@@ -534,7 +534,11 @@ _URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
 # `of=` is the DESTINATION — the thing that gets overwritten. Naming the `if=`
 # source instead would point at the harmless half of `dd if=/dev/zero of=/dev/disk2`.
 _DD_TARGET_RE = re.compile(r"\bof=(\S+)")
-_DEVICE_RE = re.compile(r"(/dev/[\w/]+)")
+# Hyphens and dots are ordinary in device paths — /dev/mapper/vg-root,
+# /dev/disk/by-id/ata-Samsung_SSD, /dev/nvme0n1p2. Leaving them out of the
+# class silently truncated the target shown on the dialog, which is worse than
+# showing none: the reader would check the wrong device.
+_DEVICE_RE = re.compile(r"(/dev/[\w./-]+)")
 _DETAIL_MAX = 48
 
 
