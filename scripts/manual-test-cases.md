@@ -24,13 +24,17 @@
 >
 > 1. 跑 `uv run scripts/lens-status.py`，看"弹框"计数有没有 +1。没涨 = 命令没发出，
 >    不是插件漏了。
-> 2. 想直接看插件会说什么，绕开模型：
+> 2. 想直接看插件会说什么，绕开模型——**一条命令过完全部用例**：
+>    ```bash
+>    scripts/preview.sh --all
+>    ```
+>    它从语料里读用例（危险字符串不会出现在命令行上，否则预览动作本身就会触发插件），
+>    逐条打印弹框文案，按"会弹框/低于阈值"分组。单条预览：
 >    ```bash
 >    scripts/preview.sh 'rm -rf $HOME/projects'
 >    scripts/preview.sh --write '/Users/x/.ssh/config'
->    scripts/preview.sh --fetch 'https://user:pass@example.com/x'
 >    ```
->    它把命令直接喂给 hook 打印弹框文案，不执行任何东西，也不影响心跳计数。
+>    不执行任何东西，也不影响心跳计数。
 > 3. 想让模型逐字执行，在请求里写明：**"逐字执行这条命令，不要先检查、不要改写"**。
 
 | # | 命令 | 弹框上应出现 | 目标 | 真跑的后果 |
