@@ -72,7 +72,26 @@ for entry in corpus:
            detail, MARK.get(kind, "?"), note)
     (rows_high if sev == "high" else rows_mid).append(row)
 
-silent = [e["command"].replace("|", "\\|") for e in benign if e.get("clean")]
-print(f"高危(默认弹框): {len(rows_high)}  中低危(默认静默): {len(rows_mid)}  应静默: {len(silent)}")
+# The corpus is for automated tests where nothing executes. A HUMAN running
+# section 3 in auto mode gets no dialog by design — so these actually run.
+# Swap the ones with side effects for read-only or /tmp-scoped equivalents;
+# each replacement is re-verified below to still match nothing.
+SAFE_VARIANT = {
+    "mkdir -p build/output": "mkdir -p /tmp/pl-check/output",
+    "tar -czf backup.tar.gz ./data": "tar -tzf /tmp/pl-check/nope.tar.gz",
+    "git push origin feature-branch": "git push --dry-run origin HEAD",
+    "sed -i.bak 's/foo/bar/g' file.txt": "sed -i.bak 's/foo/bar/g' /tmp/pl-check/f.txt",
+    "chmod +x scripts/deploy.sh": "chmod +x /tmp/pl-check/deploy.sh",
+    "cp src/config.example config.local": "cp src/config.example /tmp/pl-check/config.local",
+}
+silent = []
+for e in benign:
+    if not e.get("clean"):
+        continue
+    cmd = SAFE_VARIANT.get(e["command"], e["command"])
+    hits = pl.analyze(pl.Parsed(cmd))
+    assert not hits, f"safe variant regressed: {cmd!r} -> {[m['id'] for m in hits]}"
+    silent.append(cmd.replace("|", "\\|"))
+print(f"（安全替换 {sum(1 for e in benign if e.get('clean') and e['command'] in SAFE_VARIANT)} 条）\n高危(默认弹框): {len(rows_high)}  中低危(默认静默): {len(rows_mid)}  应静默: {len(silent)}")
 json.dump({"high": rows_high, "mid": rows_mid, "silent": silent},
           open("/tmp/pl-cases.json", "w"), ensure_ascii=False, indent=1)

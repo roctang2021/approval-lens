@@ -1,8 +1,12 @@
 # 人工验收清单 — Permission Lens
 
-**怎么用**：让 Claude 执行下面每条命令，看弹框（或确认它没弹），然后**点 Deny**。
-插件是 `PreToolUse` hook，在命令执行**之前**就已经完成全部工作了 —— 所以你不需要
-真的运行任何一条就能验收。只有标了 ✅ 的可以放心点 Allow。
+**怎么用**：让 Claude 执行下面每条命令，看弹框（或确认它没弹）。
+
+- **第一、二节会弹框** → 看完点 **Deny**。插件是 `PreToolUse` hook，在命令执行
+  **之前**就干完活了，所以你不需要真跑任何一条就能验收。
+- **⚠️ 第三节按设计不弹框** → 也就是说在 auto 模式下**它们会直接执行**。清单里已把
+  有副作用的命令换成只读或 `/tmp` 下的等价物（`git push` 换成 `--dry-run`，写文件
+  的都改到 `/tmp/pl-check/`），但仍建议先 `mkdir -p /tmp/pl-check` 再开跑。
 
 本文件由 `scripts/gen-manual-cases.py` 从真实规则与语料生成，每条预期都经分析器实跑
 校验，不是手写的。规则变了就重新生成。
@@ -71,7 +75,7 @@
 
 ## 三、必须完全静默的（误报防线，共 35 条）
 
-这些是日常命令，**任何一条弹框都是 bug**。其中最后几条是 M15/M16 修的两类：
+这些是日常命令，**任何一条弹框都是 bug**。跑之前先 `mkdir -p /tmp/pl-check`。其中最后几条是 M15/M16 修的两类：
 引号里提到危险模式、heredoc 里写关于危险命令的文档。
 
 1. `ls -la`
@@ -85,20 +89,20 @@
 9. `docker ps -a`
 10. `kubectl get pods -n default`
 11. `echo 'hello world'`
-12. `mkdir -p build/output`
-13. `cp src/config.example config.local`
+12. `mkdir -p /tmp/pl-check/output`
+13. `cp src/config.example /tmp/pl-check/config.local`
 14. `python3 manage.py migrate`
 15. `node index.js --port 3000`
-16. `tar -czf backup.tar.gz ./data`
+16. `tar -tzf /tmp/pl-check/nope.tar.gz`
 17. `git log --oneline -10`
 18. `git commit -m 'fix: handle empty input'`
 19. `git diff HEAD~1`
-20. `git push origin feature-branch`
+20. `git push --dry-run origin HEAD`
 21. `ps aux \| grep node`
 22. `cat access.log \| grep 404 \| awk '{print $1}' \| sort \| uniq -c \| sort -rn`
 23. `brew list --versions`
-24. `sed -i.bak 's/foo/bar/g' file.txt`
-25. `chmod +x scripts/deploy.sh`
+24. `sed -i.bak 's/foo/bar/g' /tmp/pl-check/f.txt`
+25. `chmod +x /tmp/pl-check/deploy.sh`
 26. `curl -s https://api.example.com/health`
 27. `crontab -l`
 28. `python3 tools/eval.py --dataset test`
