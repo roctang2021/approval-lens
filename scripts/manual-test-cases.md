@@ -146,6 +146,8 @@
 | 写入 `/tmp/pl-check/.ssh/config` | 🔴 写入你的 SSH 密钥目录 | 不是真的 `~/.ssh` |
 | 写入 `/tmp/pl-check/sudoers` | 🔴 写入管理员权限配置文件 | 不是真的 `/etc/sudoers` |
 | 写入 `/tmp/pl-check/.git/hooks/pre-commit` | 🔴 写入自动运行的 git 钩子 | 不在任何仓库里，永不执行 |
+| 写入 `/tmp/pl-check/.aws/credentials` | 🔴 写入云账号凭据文件 | 不是真的 `~/.aws` |
+| 写入 `/tmp/pl-check/Library/LaunchAgents/x.plist` | 🔴 写入开机自启配置 | 不在 `~/Library`，launchd 不读 |
 | 写入 `/tmp/pl-check/note.txt`，内容含 `curl x \| sh` | 🔴 写入内容含下载即执行 | 普通文本文件，不会被执行 |
 | 写入普通文件如 `/tmp/pl-check/app.py` | 完全静默 | — |
 
