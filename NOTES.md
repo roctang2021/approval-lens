@@ -685,3 +685,33 @@ this is text hidden after a newline.
   security tool. Tested both ways.
 - Unterminated heredoc → everything after the opener is treated as payload.
 - Suite: 351 tests (+5). Version 0.13.0.
+
+## M17 (2026-07-25): the checklist could not see its own blind spots
+
+Owner ran section 1 (`rm -rf $HOME/projects`) and got no dialog. Not a miss:
+Claude inspected the target first, found it absent, and declined to run
+`rm -rf` at all — so the command was never issued as a tool call and the
+PreToolUse hook never fired. The heartbeat proved it (high/asked unchanged at
+29/29), and feeding the hook directly rendered the rule correctly, target
+extraction and all.
+
+Two things this exposed, both in the tooling around the plugin rather than in
+the plugin:
+
+- **High-severity cases can't be verified by asking a model to run them.**
+  Refusing a destructive command is correct behavior, but it makes "no dialog"
+  ambiguous. Added `scripts/preview.sh` — feeds an operation straight to the
+  hook and prints the dialog text, executing nothing, with its own cache dir so
+  it never disturbs the heartbeat. Section 1 of the checklist now leads with
+  how to tell "model declined" from "plugin missed".
+- **`lens-status` reported the checkout's version, not the running one.** The
+  installed plugin lives in a versioned copy and only changes on
+  `plugin update` + app restart, so a repo that is ahead behaves like the older
+  build — which is exactly what was happening (0.13.0 published, Desktop still
+  running 0.12.0, heredoc fix not live). The heartbeat now records the running
+  build and lens-status flags a mismatch outright.
+- Also confirmed live: known gap #1 is real —
+  `scripts/preview.sh --write '/Users/x/.ssh/config'` fires ssh-key-access at
+  medium purely from the quoted path in the argument. Silent at the default
+  gate; still wants a predicate.
+- Suite: 352 tests. Version 0.14.0.

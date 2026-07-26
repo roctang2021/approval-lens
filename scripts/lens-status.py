@@ -73,7 +73,16 @@ def main():
     except Exception:
         hb = {}
 
-    print(f"Permission Lens {_version()}")
+    # Two versions matter and they routinely disagree: the checkout, and the
+    # build that actually handled the last call (installed copy + app restart).
+    # Reporting only the former is how "I fixed that already" turns into an
+    # hour of confusion.
+    repo, running = _version(), str(hb.get("running") or "")
+    if running and running != repo:
+        print(f"Permission Lens {running}（正在运行）· 仓库是 {repo} —— "
+              f"重启 Claude 后新版才生效")
+    else:
+        print(f"Permission Lens {repo}")
     last = hb.get("last")
     if not isinstance(last, dict) or not isinstance(last.get("ts"), (int, float)):
         print(_text(locale, "empty").format(path=hb_path))

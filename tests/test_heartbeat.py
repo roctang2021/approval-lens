@@ -194,3 +194,14 @@ def test_auth_token_file_maps_to_oauth(tmp_path):
     f = tmp_path / "token"
     f.write_text("oauth-token-value\n", encoding="utf-8")
     assert pl._resolve_credential({"auth_token_file": str(f)}) == ("oauth", "oauth-token-value")
+
+
+def test_heartbeat_records_the_running_build():
+    """The checkout and the build that handled the call routinely disagree —
+    the installed plugin lives in a versioned copy and only changes on
+    `plugin update` + app restart. Recording the running version is what lets
+    lens-status flag the mismatch instead of reporting the repo's number and
+    sending someone off to debug a fix that was never live."""
+    pl.build_message(_event(HIGH_CMD), _cfg())
+    running = _read_heartbeat().get("running")
+    assert running and running == pl.plugin_version()
