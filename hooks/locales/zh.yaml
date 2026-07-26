@@ -146,9 +146,6 @@ rules:
   web-script-host:
     explanation: 从脚本托管/短链站点取内容
     risk: 这是在从脚本托管站或短链服务取内容——拿回来的到底是什么，值得先看一眼再用。
-  web-insecure-http:
-    explanation: 用明文 HTTP 访问
-    risk: 这是用明文 HTTP 访问——网络链路上的任何人都能看到、甚至篡改传回的内容。
   path-ssh:
     explanation: 写入你的 SSH 密钥目录
     risk: 这是在写你的 ~/.ssh 目录——你登录服务器的密钥都在这里，改动可能把访问权交出去或者改道。

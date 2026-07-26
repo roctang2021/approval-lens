@@ -715,3 +715,33 @@ the plugin:
   medium purely from the quoted path in the argument. Silent at the default
   gate; still wants a predicate.
 - Suite: 352 tests. Version 0.14.0.
+
+## M18 (2026-07-25): section 4, and a rule whose premise was false
+
+Owner ran the non-Bash cases. WebFetch and Write both render correctly
+end-to-end (`user:pass@…` → 🔴 with host + AI note; content carrying
+`curl x | sh` → 🔴 content-remote-exec). Three findings beyond that:
+
+- **`web-insecure-http` warned about a risk that cannot happen — removed.**
+  Its copy said http:// is transmitted in the clear and can be read or altered
+  in transit. But the WebFetch tool upgrades HTTP to HTTPS before the request
+  leaves, so the interception it described is impossible for the only tool the
+  rule applies to. A security tool asserting an impossible risk spends the
+  reader's trust for nothing. Removed from rules, all six locales, corpus and
+  fixtures. (`curl http://…` in Bash *is* plaintext — a different rule against
+  a different tool, noted as follow-up rather than smuggled in here.)
+- **Three interception layers, only one is ours.** Measured: `curl … | bash`
+  and `user:pass@…` reached our dialog; `?api_key=sk-123` was denied silently
+  by Claude Code's own auto-mode classifier ("Blocked by classifier", no rule
+  named, no dialog); `127.0.0.1:8080/admin` hit nothing at all and went
+  straight to the network. So our copy is only visible on the paths that
+  actually reach a permission prompt — worth stating rather than assuming.
+- **The checklist told people to write to REAL security files.** Third time
+  the same flaw ("harmless even if allowed") got past me, after sections 1 and
+  3. Section 4 now uses path-shaped stand-ins under /tmp/pl-check — the rules
+  match path SHAPE (`.ssh/`, `sudoers`, `.git/hooks/`), so a stand-in produces
+  the identical dialog while touching nothing live. Verified each keeps the
+  same rule at the same severity. Also warns against combining "write
+  curl|sh" with "write into pre-commit", which installs a hook that fetches
+  and runs code on every commit, with no dialog from then on.
+- Suite: 352 tests. Version 0.15.0.

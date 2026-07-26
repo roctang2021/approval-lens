@@ -134,21 +134,36 @@
 
 ## 四、非 Bash 工具
 
-让 Claude 做这些事（同样看完点 Deny）：
+跑之前 `mkdir -p /tmp/pl-check`。**这些靶子是路径形状相同的替身**——规则匹配的是
+路径形态（`.ssh/`、`sudoers`、`.git/hooks/`），不是那个具体文件，所以写到 `/tmp`
+下命中的是同一条规则、同一份文案，但**即使被批准也碰不到你机器上真实生效的配置**。
 
-| 操作 | 预期 |
-|---|---|
-| 抓取 `https://user:pass@example.com/x` | 🔴 URL 里带着账号密码 |
-| 抓取 `https://api.example.com/d?api_key=sk-123` | 🟡 默认静默（medium 档才弹） |
-| 抓取 `http://127.0.0.1:8080/admin` | 🟡 默认静默 |
-| 写入 `~/.ssh/config` | 🔴 写入你的 SSH 密钥目录 |
-| 写入 `/etc/sudoers` | 🔴 写入管理员权限配置文件 |
-| 写入 `.git/hooks/pre-commit` | 🔴 写入自动运行的 git 钩子 |
-| 写入内容含 `curl x \| sh` 的任意文件 | 🔴 写入内容含下载即执行 |
-| 写入普通文件如 `src/app.py` | 完全静默 |
+| 操作 | 预期 | 为什么安全 |
+|---|---|---|
+| 抓取 `https://user:pass@example.com/x` | 🔴 URL 里带着账号密码 | example.com 是保留域，凭据是占位符 |
+| 抓取 `https://api.example.com/d?api_key=sk-123` | 🟡 默认静默 | 同上 |
+| 抓取 `https://127.0.0.1:8080/admin` | 🟡 默认静默 | 本机端口，没服务就连不上 |
+| 写入 `/tmp/pl-check/.ssh/config` | 🔴 写入你的 SSH 密钥目录 | 不是真的 `~/.ssh` |
+| 写入 `/tmp/pl-check/sudoers` | 🔴 写入管理员权限配置文件 | 不是真的 `/etc/sudoers` |
+| 写入 `/tmp/pl-check/.git/hooks/pre-commit` | 🔴 写入自动运行的 git 钩子 | 不在任何仓库里，永不执行 |
+| 写入 `/tmp/pl-check/note.txt`，内容含 `curl x \| sh` | 🔴 写入内容含下载即执行 | 普通文本文件，不会被执行 |
+| 写入普通文件如 `/tmp/pl-check/app.py` | 完全静默 | — |
+
+> **⛔ 不要用真路径测。** `~/.ssh/config`、`/etc/sudoers`、仓库里真实的
+> `.git/hooks/pre-commit` 都是**实际生效**的文件：一次覆盖写就没了，`/etc/sudoers`
+> 写坏还会让整台机器无法 sudo（包括修回来所需的 sudo）。上表的替身能给出**完全相同**
+> 的弹框文案。
+>
+> **也不要把"写 `curl x | sh`"和"写进 pre-commit"合起来测**——那等于装一个每次
+> `git commit` 都自动联网拉脚本执行的钩子，而且从此不再弹框。
 
 **注意**：Write/Edit 在 Accept edits 模式下本来会自动放行，但被标记的会强制弹框——
 这是 `"ask"` 的保底效果，是特性不是 bug。
+
+**三条不同的拦截路径**（2026-07-25 实测，值得知道）：本插件的 `"ask"` 只是其中一层。
+`?api_key=…` 那条在 auto 模式下被 Claude Code **自己的分类器**静默 denied，理由只有
+"Blocked by classifier"、根本没走到弹框；而 `127.0.0.1:8080` 那条**没有任何拦截**、
+直达网络。所以本插件的文案只在"走到权限弹框"这条路径上才看得到。
 
 ## 五、插件自身状态
 

@@ -150,9 +150,6 @@ rules:
   web-script-host:
     explanation: 從指令碼代管或短網址站台取內容
     risk: 這是在從指令碼代管站或短網址服務取內容——拿回來的到底是什麼，值得先看一眼再用。
-  web-insecure-http:
-    explanation: 用未加密的 HTTP 連線
-    risk: 這是用未加密的 HTTP 連線——網路路徑上的任何人都能看到、甚至竄改傳回來的內容。
   path-ssh:
     explanation: 寫入你的 SSH 金鑰資料夾
     risk: 這是在寫你的 ~/.ssh 資料夾——你登入伺服器的金鑰都放在這裡，改動可能把存取權交出去或改到別的地方。

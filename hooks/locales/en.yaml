@@ -146,9 +146,6 @@ rules:
   web-script-host:
     explanation: Fetches from a script-hosting or short-link site
     risk: This fetches from a site that mostly serves raw scripts or shortened links — worth a look at what actually comes back before it gets used.
-  web-insecure-http:
-    explanation: Fetches over unencrypted HTTP
-    risk: This fetches over plain unencrypted HTTP — anyone on the network path can read or even alter what comes back.
   path-ssh:
     explanation: Writes into your SSH key folder
     risk: This writes into your ~/.ssh folder, where your server login keys live — a change here can hand out or redirect access to your servers.

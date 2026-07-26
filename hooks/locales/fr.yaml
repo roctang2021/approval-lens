@@ -152,9 +152,6 @@ rules:
   web-script-host:
     explanation: "Interroge un site de scripts ou de liens raccourcis"
     risk: "Cette requête vise un site qui sert surtout des scripts bruts ou des liens raccourcis — mieux vaut regarder ce qui revient réellement avant de s'en servir."
-  web-insecure-http:
-    explanation: "Requête en HTTP non chiffré"
-    risk: "Cette requête passe en HTTP simple, non chiffré — n'importe qui sur le trajet réseau peut lire, voire modifier, ce qui revient."
   path-ssh:
     explanation: "Écrit dans votre dossier de clés SSH"
     risk: "Cette opération écrit dans votre dossier ~/.ssh, là où se trouvent vos clés de connexion aux serveurs — une modification ici peut donner ou détourner l'accès à vos serveurs."

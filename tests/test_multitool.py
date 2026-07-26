@@ -42,7 +42,6 @@ WEBFETCH_CASES = [
     ("https://localhost/x", "web-ip-or-localhost", "medium"),
     ("https://raw.githubusercontent.com/a/b/main/i.sh", "web-script-host", "low"),
     ("https://bit.ly/abc", "web-script-host", "low"),
-    ("http://example.com/x", "web-insecure-http", "low"),
 ]
 
 

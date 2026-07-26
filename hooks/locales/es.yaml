@@ -154,9 +154,6 @@ rules:
   web-script-host:
     explanation: Descarga de un sitio de scripts o enlaces cortos
     risk: Esto descarga de un sitio que sirve sobre todo scripts sueltos o enlaces acortados — conviene mirar qué llega realmente antes de usarlo.
-  web-insecure-http:
-    explanation: Descarga por HTTP sin cifrar
-    risk: Esto descarga por HTTP sin cifrar — cualquiera que esté en el camino de la red puede leer o incluso alterar lo que llega.
   path-ssh:
     explanation: Escribe en tu carpeta de claves SSH
     risk: Esto escribe en tu carpeta ~/.ssh, donde están las claves con las que entras a tus servidores — un cambio ahí puede repartir o desviar el acceso a esos servidores.

@@ -31,8 +31,9 @@ rules:
     regex: "://([\\w.-]*\\.)?(raw\\.githubusercontent\\.com|gist\\.githubusercontent\\.com|pastebin\\.com|bit\\.ly|tinyurl\\.com|goo\\.gl)(:|/|$)"
     detail: url_host
 
-  - id: web-insecure-http
-    category: insecure-transport
-    severity: low
-    regex: "^http://"
-    detail: url_host
+# Removed 2026-07-25: `web-insecure-http` warned that http:// is transmitted in
+# the clear — but the WebFetch tool upgrades HTTP to HTTPS before the request
+# leaves, so the interception it described cannot happen. A rule that asserts an
+# impossible risk is worse than no rule: it spends the reader's trust for
+# nothing. (`curl http://…` in Bash IS plaintext, but that is a different rule
+# against a different tool and does not exist yet.)
