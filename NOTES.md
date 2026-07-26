@@ -745,3 +745,29 @@ end-to-end (`user:pass@…` → 🔴 with host + AI note; content carrying
   curl|sh" with "write into pre-commit", which installs a hook that fetches
   and runs code on every commit, with no dialog from then on.
 - Suite: 352 tests. Version 0.15.0.
+
+## M19 (2026-07-25): section 2, and dry-run false alarms
+
+Flipped `ask.min_severity` to medium so the owner could exercise the 25
+medium/low rules. Rewriting section 2 for safety turned up one more instance of
+the M18 defect class:
+
+- **Section 2 was 24/25 real destructive commands** — `git push --force origin
+  main`, `git clean -fdx`, `crontab <file>` (which REPLACES the entire existing
+  crontab, it does not append), `sudo rm /etc/hosts`. Fourth section to need
+  this fix. All 25 now use stand-ins verified to hit the same rule at the same
+  severity: relative paths for rm, `/tmp/pl-check/` shapes for the credential
+  readers, non-existent remotes/users/services/buckets for the rest, and
+  `git -C /tmp/pl-check/norepo` for the three git cases — which is safe only
+  because the directory does not exist, so the checklist says not to create it.
+- **`npm publish --dry-run` and `aws s3 rm --dryrun` fire at full severity.**
+  The dialog then says "publishes to npm, effectively cannot be taken back" for
+  a command that uploads nothing. Same shape as the web-insecure-http removal:
+  copy asserting a consequence the command cannot have. Not fixed here (it
+  needs a flag-aware exception in both rules, and changing rules mid-test would
+  invalidate the run the owner is about to do); the checklist uses stand-ins
+  that really do reach the network instead. TODO next round.
+- Note `_target_is_risky` treats ANY absolute path as risky, so
+  `rm -rf /tmp/x` is high while `rm -rf ./build/x` is medium. Deliberate
+  (documented at the predicate), but it means a /tmp stand-in cannot be used to
+  exercise the medium rm rule — the checklist uses a relative path.
