@@ -716,7 +716,7 @@ the plugin:
   gate; still wants a predicate.
 - Suite: 352 tests. Version 0.14.0.
 
-## M18 (2026-07-25): section 4, and a rule whose premise was false
+## M18 (2026-08-14): section 4, and a rule whose premise was false
 
 Owner ran the non-Bash cases. WebFetch and Write both render correctly
 end-to-end (`user:pass@…` → 🔴 with host + AI note; content carrying
@@ -746,7 +746,7 @@ end-to-end (`user:pass@…` → 🔴 with host + AI note; content carrying
   and runs code on every commit, with no dialog from then on.
 - Suite: 352 tests. Version 0.15.0.
 
-## M19 (2026-07-25): section 2, and dry-run false alarms
+## M19 (2026-08-14): section 2, and dry-run false alarms
 
 Flipped `ask.min_severity` to medium so the owner could exercise the 25
 medium/low rules. Rewriting section 2 for safety turned up one more instance of
