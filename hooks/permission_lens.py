@@ -990,16 +990,12 @@ def _post_messages_api(subject, model, lang, kind, credential, timeout, task="")
     # Lazy import keeps Tier 1 startup lean (urllib.request pulls in a lot).
     import urllib.request
 
-    system = ui_text(load_locale(lang), kind, "", section="llm_prompts") or ui_text(
-        load_locale(BASE_LANG), "bash", "", section="llm_prompts")
+    system = _llm_system_prompt(lang, kind, bool(task))
     # PRIVACY INVARIANT: the request body is a static system prompt plus the
     # subject string — and, ONLY when llm.send_task_context is on, the
     # developer's current request. Never cwd, session id, or transcript beyond
     # that one line.
     if task:
-        system += " " + (ui_text(load_locale(lang), "task_suffix", "", section="llm_prompts")
-                         or ui_text(load_locale(BASE_LANG), "task_suffix", "",
-                                    section="llm_prompts"))
         content = (f"<user_request>\n{task}\n</user_request>\n"
                    f"<operation>\n{subject}\n</operation>")
     else:
@@ -1056,9 +1052,26 @@ def _cache_dir():
     return Path(os.path.expanduser(os.environ.get(CACHE_DIR_ENV) or DEFAULT_CACHE_DIR))
 
 
+def _llm_system_prompt(lang, kind, with_task=False):
+    """The exact system prompt a request would carry, prompt + optional suffix."""
+    system = ui_text(load_locale(lang), kind, "", section="llm_prompts") or ui_text(
+        load_locale(BASE_LANG), "bash", "", section="llm_prompts")
+    if with_task:
+        system += " " + (ui_text(load_locale(lang), "task_suffix", "", section="llm_prompts")
+                         or ui_text(load_locale(BASE_LANG), "task_suffix", "",
+                                    section="llm_prompts"))
+    return system
+
+
 def _llm_cache_path(subject, model, lang, kind="bash", task=""):
+    # The PROMPT is part of the key, not just the inputs. Leaving it out meant
+    # editing a prompt changed nothing the reader could see: every command seen
+    # before kept serving its old answer for the full TTL, so a prompt fix was
+    # untestable on exactly the cases that motivated it. Verified live on
+    # 2026-08-14 — four reruns came back byte-identical after a prompt rewrite.
+    prompt = _llm_system_prompt(lang, kind, bool(task))
     digest = hashlib.sha256(
-        f"{model}\n{lang}\n{kind}\n{task}\n{subject}".encode("utf-8")).hexdigest()
+        f"{model}\n{lang}\n{kind}\n{task}\n{prompt}\n{subject}".encode("utf-8")).hexdigest()
     return _cache_dir() / "llm" / f"{digest}.json"
 
 

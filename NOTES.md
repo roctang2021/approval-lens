@@ -813,3 +813,29 @@ Tier 2 is the interesting half. Scored by hand across 25:
   all, which is the one fact worth having.
 
 Version 0.16.0.
+
+## M21 (2026-08-14): the prompt was not part of the cache key
+
+Reran cases 2, 14, 17 and 22 after the M20 prompt rewrite. All four AI notes
+came back **byte-identical** — `shred -u` still described as controlling the
+overwrite count, `sudo -n` still as "runs without needing a password". The
+prompt change had not failed; the model was never called.
+
+`_llm_cache_path` keyed on `model + lang + kind + task + subject`. The system
+prompt was absent, so editing a prompt invalidated nothing: every command seen
+before kept serving the answer the OLD prompt produced, for the full 7-day TTL.
+The prompt was therefore untestable on exactly the cases that motivated
+changing it — you could only observe the new wording on a command you had never
+run, which is the opposite of how anyone verifies a fix.
+
+Fixed by folding the assembled system prompt (including the task suffix, when
+task context is on) into the digest, with two tests: one asserting a changed
+prompt yields a different path, one asserting stability when nothing changed.
+Old entries are simply never looked up again.
+
+This is the third time the same shape of bug has cost real time: something the
+tool reports looked current but was not — the repo-vs-running version (M17),
+the heartbeat counters (open), and now the Tier 2 cache. A cached or stale
+value presented without saying it is cached is worse than no value.
+
+Version 0.17.0. 354 tests.

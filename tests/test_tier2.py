@@ -276,3 +276,32 @@ def test_tier1_message_survives_llm_failure(monkeypatch):
     msg = pl.build_message(event, _config())
     assert msg is not None and msg.startswith("🔴")
     assert "🤖" not in msg
+
+
+def test_cache_key_changes_when_the_prompt_changes(monkeypatch, tmp_path):
+    """A prompt edit must invalidate cached answers.
+
+    Without this the prompt is untestable: every command already seen keeps
+    serving the answer produced by the OLD prompt until the TTL expires, which
+    is precisely what happened on 2026-08-14 (four reruns came back
+    byte-identical after the bash prompt was rewritten).
+    """
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    args = ("rm -rf /tmp/x", "claude-haiku-4-5", "en", "bash", "")
+    before = pl._llm_cache_path(*args)
+
+    real = pl.ui_text
+
+    def patched(locale, key, default="", section="ui"):
+        if section == "llm_prompts" and key == "bash":
+            return "a different system prompt"
+        return real(locale, key, default, section=section)
+
+    monkeypatch.setattr(pl, "ui_text", patched)
+    assert pl._llm_cache_path(*args) != before
+
+
+def test_cache_key_is_stable_for_an_unchanged_prompt(monkeypatch, tmp_path):
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    args = ("rm -rf /tmp/x", "claude-haiku-4-5", "en", "bash", "")
+    assert pl._llm_cache_path(*args) == pl._llm_cache_path(*args)
