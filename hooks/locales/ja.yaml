@@ -220,7 +220,7 @@ llm_prompts:
 status:
   none: 一致なし
   asked: ダイアログ表示
-  silent: 通知なし
+  silent: ダイアログなし
   last: '最終チェック {age}（{tool} · {what}）'
   today: '本日 {total} 件チェック · 🔴 {high} · 🟡 {medium} · 🟢 {low} · 一致なし {none} · ダイアログ {asked}'
   empty: 'まだ呼び出しの記録がありません — プラグインを有効にしたセッションで Bash/WebFetch/Write/Edit をどれか実行してください（ハートビート: {path}）'
