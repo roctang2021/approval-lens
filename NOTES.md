@@ -1008,3 +1008,34 @@ your password" — is precisely the semantics Tier 2 keeps inverting ("runs
 without needing a password"). Independent confirmation that the M22 finding is
 a model error and not a misreading, and the sharpest available statement of
 what the right answer looks like. `sudo -n` stays the standing counter-example.
+
+## M24 (2026-08-14): the fix that invalidated its own test case
+
+Owner asked whether `dd if=/dev/zero of=/dev/null` wasn't section 1's own case.
+It was — case 2, chosen precisely BECAUSE /dev/null is harmless, so a 🔴 rule
+could be exercised without risking a disk. Excluding pseudo-devices in M23 was
+right, and it silently made that case unfirable: the checklist went on
+promising a red dialog that could no longer appear.
+
+Both halves are true at once. A red badge on a harmless command spends the
+credibility the badge needs; and section 1 still needs a target that fires the
+dangerous rule while staying safe to allow. Case 3 already had the right shape —
+a device path that does not exist — so case 2 now uses
+`/dev/pl-check-no-such-device`. It fires dd-to-device at high, names the device
+correctly, and fails on its own (/dev is not writable and the device is not
+there).
+
+**The checklist is now verified by the suite, not by eye.** `test_manual_cases.py`
+parses the doc and re-checks every case against the analyzer: section 1 must be
+high, section 2 must match the severity printed in its table, section 3 must
+match nothing. A drifted checklist is worse than none — each stale row reads as
+a plugin bug during testing, which is exactly the confusion this cost.
+
+Writing that test immediately caught a second, quieter defect: section 3 is a
+numbered list rather than a table, so the table pattern matched **zero** rows
+and all 35 false-positive defenses passed vacuously. Only the
+`test_sections_are_not_empty` guard exposed it. A parser that matches nothing
+is the failure mode every doc-derived test has, and asserting on the row count
+is the cheapest defense.
+
+Version 0.22.0. 374 tests + 74 checklist cases.

