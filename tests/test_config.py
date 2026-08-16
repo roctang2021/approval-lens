@@ -200,3 +200,59 @@ def test_subprocess_honors_config_lang_zh(tmp_path):
     assert out["permissionDecision"] == "ask"
     assert "高危" in out["permissionDecisionReason"]
     assert "systemMessage" not in parsed
+
+
+# ── non-interactive surfaces (measured 2026-08-14) ────────────────────────────
+
+def test_headless_entrypoint_silences_the_ask(monkeypatch, tmp_path):
+    """`claude -p` has nobody to answer, so "ask" fails the call instead of
+    prompting — measured: an allowlisted `sudo` came back "blocked by a
+    permission hook ... it didn't execute". Silence keeps the plugin out of
+    the decision, which is the never-gatekeeper core."""
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    monkeypatch.setenv(pl.ENTRYPOINT_ENV, "sdk-cli")
+    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
+    assert pl.build_message(event, _config_with()) is None
+
+
+def test_interactive_entrypoints_still_ask(monkeypatch, tmp_path):
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
+    cfg = _config_with()
+    cfg["ask"]["min_severity"] = "medium"
+    for value in ("cli", "claude-desktop", "", "something-new"):
+        monkeypatch.setenv(pl.ENTRYPOINT_ENV, value)
+        assert pl.build_message(event, cfg) is not None, value
+
+
+def test_unset_entrypoint_still_asks(monkeypatch, tmp_path):
+    """An absent variable must not silence the plugin: the failure we can
+    afford is a missing explanation, not a blocked call."""
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    monkeypatch.delenv(pl.ENTRYPOINT_ENV, raising=False)
+    cfg = _config_with()
+    cfg["ask"]["min_severity"] = "medium"
+    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
+    assert pl.build_message(event, cfg) is not None
+
+
+def test_non_interactive_opt_out_keeps_asking(monkeypatch, tmp_path):
+    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
+    monkeypatch.setenv(pl.ENTRYPOINT_ENV, "sdk-cli")
+    cfg = _config_with()
+    cfg["ask"] = {"min_severity": "medium", "non_interactive": "ask"}
+    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
+    assert pl.build_message(event, cfg) is not None
+
+
+def test_non_interactive_config_is_validated():
+    assert pl._validate_config({"ask": {"non_interactive": "ask"}})["ask"]["non_interactive"] == "ask"
+    for bad in ("nope", "", None, 1, True):
+        assert pl._validate_config({"ask": {"non_interactive": bad}})["ask"]["non_interactive"] == "silent"
+
+
+def test_dd_to_pseudo_device_is_silent():
+    """`dd of=/dev/null` overwrites nothing; a 🔴 there spends the badge's
+    credibility. Seen live in the terminal CLI on 2026-08-14."""
+    assert pl.analyze(pl.Parsed("dd if=/dev/zero of=/dev/null bs=1M count=1")) == []
+    assert [m["id"] for m in pl.analyze(pl.Parsed("dd if=/dev/zero of=/dev/sda"))] == ["dd-to-device"]

@@ -42,7 +42,10 @@ rules:
   - id: dd-to-device
     category: destructive-fs
     severity: high
-    regex: '\bdd\b[^|;&]*\bof=/dev/'
+    # /dev/null, /dev/zero and friends are not storage — `dd of=/dev/null`
+    # is the canonical harmless no-op. Flagging it 🔴 spends the credibility
+    # that the red badge needs in order to mean anything.
+    regex: '\bdd\b[^|;&]*\bof=/dev/(?!null\b|zero\b|u?random\b|std(in|out|err)\b|tty|full\b)'
     detail: device
     verb: 'dd'
 

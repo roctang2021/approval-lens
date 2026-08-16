@@ -159,7 +159,16 @@ DEFAULT_CONFIG = {
     # force-push) on the dialog too, accepting prompts for calls your rules
     # would have auto-allowed. "info" is deliberately not accepted: it would
     # prompt on every single tool call.
-    "ask": {"min_severity": "high"},     # "low" | "medium" | "high"
+    "ask": {"min_severity": "high",      # "low" | "medium" | "high"
+            # A headless run (`claude -p`, SDK, CI) has NOBODY to answer a
+            # prompt, so "ask" there does not float the decision up to a human —
+            # it fails the call outright. Measured 2026-08-14: an explicitly
+            # allowlisted `sudo` under `claude -p` came back "blocked by a
+            # permission hook ... it didn't execute". That makes the plugin a
+            # gatekeeper, which is the one thing it must never be, so on a
+            # known non-interactive surface it stays silent instead. Set
+            # "ask" to keep the old behavior and accept the blocking.
+            "non_interactive": "silent"},  # "silent" | "ask"
     "max_message_chars": MAX_MESSAGE_CHARS,
     "llm": {
         "enabled": False,                # Tier 2 is strictly opt-in
@@ -235,6 +244,8 @@ def _validate_config(raw):
     ask_raw = raw.get("ask")
     if isinstance(ask_raw, dict) and ask_raw.get("min_severity") in _ASK_THRESHOLDS:
         cfg["ask"]["min_severity"] = ask_raw["min_severity"]
+    if isinstance(ask_raw, dict) and ask_raw.get("non_interactive") in ("silent", "ask"):
+        cfg["ask"]["non_interactive"] = ask_raw["non_interactive"]
     cfg["max_message_chars"] = _clamped_number(
         raw.get("max_message_chars"), cfg["max_message_chars"],
         _MSG_CHARS_MIN, _MSG_CHARS_MAX, want_int=True)
@@ -830,6 +841,20 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     return _truncate(line, max_chars)
 
 
+# Entrypoints where no human is present to answer a prompt. Matched EXACTLY and
+# kept to surfaces actually observed, because the two mistakes are not equal:
+# mistaking interactive for headless only costs the explanation (the native
+# dialog still runs), while mistaking headless for interactive turns an
+# allowlisted call into a failure. An unknown or absent value therefore keeps
+# today's behavior rather than silencing the plugin.
+NON_INTERACTIVE_ENTRYPOINTS = frozenset({"sdk-cli", "sdk-py", "sdk-ts"})
+ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
+
+
+def is_non_interactive():
+    return os.environ.get(ENTRYPOINT_ENV, "").strip() in NON_INTERACTIVE_ENTRYPOINTS
+
+
 def passes_threshold(matches, min_severity):
     """The ask.min_severity gate: a rule match at/above `min_severity` passes.
 
@@ -1332,6 +1357,10 @@ def build_message(event, config=None):
         return None
     matches, neutral, subject, kind, detail_subject = result
     asked = passes_threshold(matches, config["ask"]["min_severity"])
+    if asked and config["ask"].get("non_interactive", "silent") == "silent" \
+            and is_non_interactive():
+        # Nobody can answer, so "ask" would block rather than prompt.
+        asked = False
     # Tier 2 runs only for calls we're actually going to put on a dialog.
     llm_text = None
     if asked:

@@ -953,3 +953,46 @@ extraction landed.
 
 330 tests (down from 354; the 24 removed were all notification tests). An
 existing `notify` block in a user config is simply ignored.
+
+## M23 (2026-08-14): the CLI, both halves
+
+Owner ran the two CLI probes. They answered opposite questions.
+
+**Interactive terminal CLI: works, and the M1-era doubt is closed.** A real
+session rendered
+
+    Hook PreToolUse:Bash requires confirmation for this command:
+    🔴 高危 · /dev/null · …（AI 解读：…）  [plugin:permission-lens]
+    Do you want to proceed?
+
+so the reason renders inline, attributed to the plugin, and `"ask"` floors the
+decision at a prompt exactly as on Desktop. The old "the CLI never fired the
+hook" note was about `PermissionRequest`, a different event, and does not carry
+over to `PreToolUse`.
+
+**Headless `-p`: the plugin was acting as a gatekeeper.** `claude -p "Run: sudo
+-n rm /tmp/pl-check/sudo-target.txt" --allowedTools "Bash(sudo:*)"` — the tool
+explicitly allowlisted — came back: "The command was blocked by a permission
+hook … It didn't execute." Nobody is present to answer, so `"ask"` does not
+float the decision up to a human; it fails the call. The code never emitted
+deny, and the effect was a denial anyway. That is the core invariant broken in
+practice while intact on paper.
+
+Probed for a signal rather than guessing: under `claude -p`,
+`CLAUDE_CODE_ENTRYPOINT=sdk-cli` (Desktop reports `claude-desktop`). New
+`ask.non_interactive`, default `"silent"`: on an entrypoint in an explicit
+non-interactive set, matched calls print `{}`. The set is an exact-match
+allowlist and an unknown or absent value keeps today's behavior, because the
+two errors are not symmetric — mistaking interactive for headless costs an
+explanation, mistaking headless for interactive costs a working command.
+
+**Same screenshot, second bug: `dd if=/dev/zero of=/dev/null` was 🔴 high.**
+`/dev/null` is not storage; that command is the canonical harmless no-op. The
+rule matched any `of=/dev/`. Pseudo-devices are now excluded. Notably Tier 2
+had already caught it live — "writes to /dev/null, which discards data, so no
+real file or device is changed" — the third instance of the model correcting a
+category-level rule on a specific instance, after 127.0.0.1 and the local npm
+registry. Tier 2 flagging a Tier 1 over-claim is turning out to be a reliable
+signal worth mining rather than a curiosity.
+
+Version 0.21.0. 336 tests.
