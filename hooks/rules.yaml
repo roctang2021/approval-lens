@@ -118,20 +118,31 @@ rules:
     verb: 'nc|ncat|netcat'
 
   # ── credential access ─────────────────────────────────────────────────────
+  # scope argv + not_verb: these fire on a path SHAPE, which used to be found
+  # anywhere in the raw text — inside a commit message, inside an echo. A path
+  # is an argument to something, and printing it is not touching it.
   - id: ssh-key-access
     category: credential-access
     severity: medium
     regex: '(/\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b)'
+    scope: argv
+    not_verb: 'echo|printf'
 
   - id: aws-creds-access
     category: credential-access
     severity: medium
     regex: '/\.aws/(credentials|config)\b|/\.aws\b'
+    scope: argv
+    not_verb: 'echo|printf'
 
+  # Anchored to the whole token now, not to surrounding whitespace: the old
+  # form matched `.env` inside `git commit -m "fix .env loading"`.
   - id: dotenv-access
     category: credential-access
     severity: low
-    regex: '(^|[\s/=@''"])\.env(\.[\w.-]+)?(\s|$|[''"])'
+    regex: '(^|/)\.env(\.[\w.-]+)?$'
+    scope: argv
+    not_verb: 'echo|printf'
 
   # Split by whether the secret itself is printed: `dump-keychain` empties the
   # whole keychain, and -w/-g make a lookup print the password. A plain lookup
@@ -158,7 +169,9 @@ rules:
   - id: shell-history-access
     category: credential-access
     severity: medium
-    regex: '(\.bash_history|\.zsh_history|\.python_history|\.mysql_history|\.psql_history)\b'
+    regex: '(\.bash_history|\.zsh_history|\.python_history|\.mysql_history|\.psql_history)$'
+    scope: argv
+    not_verb: 'echo|printf'
 
   # ── obfuscation ───────────────────────────────────────────────────────────
   - id: base64-decode-exec
@@ -225,6 +238,7 @@ rules:
     severity: medium
     regex: '\bnpm\s+publish\b'
     verb: 'npm'
+    without_flags: ['--dry-run']
 
   - id: pypi-upload
     category: publish-irreversible
@@ -243,6 +257,8 @@ rules:
     severity: medium
     regex: '\b(aws|gcloud|az)\b[^;&|]*\b(delete|rm|destroy|terminate|remove)\b'
     verb: 'aws|gcloud|az'
+    # aws spells it --dryrun, gcloud/az --dry-run. Neither transfers anything.
+    without_flags: ['--dryrun', '--dry-run']
 
   # ── persistence / system modification ─────────────────────────────────────
   - id: crontab-modify
@@ -263,7 +279,12 @@ rules:
     regex: '\blaunchctl\s+(load|bootstrap|enable|submit)\b'
     verb: 'launchctl'
 
+  # scope redirect, NOT not_verb: `echo 'payload' >> ~/.zshrc` is the canonical
+  # dangerous form, so suppressing echo would delete the rule. What distinguishes
+  # it from `echo "add this >> ~/.zshrc"` is whether the operator is really a
+  # redirect or just text inside a quoted argument — a structural question.
   - id: shell-rc-append
     category: persistence
     severity: high
-    regex: '>>?\s*(~|\$HOME)?/?\.(bashrc|bash_profile|zshrc|zprofile|zshenv|profile)\b'
+    regex: '(^|/)\.(bashrc|bash_profile|zshrc|zprofile|zshenv|profile)$'
+    scope: redirect

@@ -1109,3 +1109,36 @@ rather than order — a diagnostic telling the reader to restart in order to
 downgrade.
 
 Version 0.24.0. 421 tests.
+
+## M27 (2026-08-14): flag and path semantics leave the regexes
+
+Two false-positive classes, one root cause: rules were deciding structural
+questions with a regex over raw command text.
+
+- **A path SHAPE is not a path USE.** `echo "~/.ssh/id_rsa"` fired the
+  credential rule, and so did `git commit -m "fix .env loading"` — an everyday
+  commit message. Five rules matched a path pattern anywhere in the text.
+  New `scope: argv` matches individual argv tokens and skips tokens containing
+  whitespace, because a token with spaces is prose that mentions a path rather
+  than a path. Plus `not_verb: 'echo|printf'`: printing a path is not touching
+  it.
+- **`shell-rc-append` could not use that fix.** `echo 'payload' >> ~/.zshrc` is
+  the CANONICAL dangerous form, so suppressing `echo` would have deleted the
+  rule outright. What separates it from `echo "add this >> ~/.zshrc"` is
+  whether `>>` is really a redirect or just text inside a quoted argument — a
+  structural question a regex cannot answer. `SimpleCommand.redirect_targets()`
+  scans quote-aware, and the rule now runs `scope: redirect`.
+- **`--dry-run` disarms a rule.** `npm publish --dry-run` and
+  `aws s3 rm --dryrun` uploaded and deleted nothing while the dialog announced
+  an irreversible publish. Rules take `without_flags:`; `has_flag` understands
+  bundled short options (`-f` inside `-fdx`) and `--flag=value`, so a
+  flag-based rule cannot be evaded by spelling.
+
+The mechanism matters more than the seven rules migrated: the vocabulary is now
+`verb` / `not_verb` / `scope` / `without_flags`, all resolved against the parsed
+argv, so the next rule that depends on structure does not need another bespoke
+regex trick. Section 3 of the checklist grew from 35 to 42 cases and the
+suite's checklist tests hold them.
+
+Two long-standing gaps close with this: quoted-path false positives, and (from
+M23) CLI/headless verification. Version 0.25.0. 446 tests.

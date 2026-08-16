@@ -401,6 +401,52 @@ class SimpleCommand:
             self.name = os.path.basename(tok)
             break
 
+    def redirect_targets(self):
+        """Files this stage writes to via > or >>, found quote-aware.
+
+        Structural, not textual: in `echo "add this >> ~/.zshrc"` the operator
+        sits INSIDE a quoted argument and is therefore not a redirect at all,
+        while `echo 'payload' >> ~/.zshrc` really does append to the file. A
+        regex over the raw text cannot tell those apart; this can.
+        """
+        targets, i, n, quote = [], 0, len(self.raw), None
+        while i < n:
+            ch = self.raw[i]
+            if quote:
+                quote = None if ch == quote else quote
+                i += 1
+                continue
+            if ch in ("'", '"'):
+                quote = ch
+                i += 1
+                continue
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == ">":
+                i += 1
+                while i < n and self.raw[i] in ">|&":  # >>, >|, &>
+                    i += 1
+                while i < n and self.raw[i].isspace():
+                    i += 1
+                start = i
+                while i < n and not self.raw[i].isspace():
+                    i += 1
+                if i > start:
+                    targets.append(self.raw[start:i].strip("'\""))
+                continue
+            i += 1
+        return targets
+
+    def path_tokens(self):
+        """argv entries that could plausibly BE a path.
+
+        A token containing whitespace is prose that happens to mention a path —
+        `git commit -m "fix .env loading"` is a commit message, not a read of
+        .env, and it used to fire the credential rule every time.
+        """
+        return [tok for tok in self.argv if tok and not any(c.isspace() for c in tok)]
+
     def flags_and_args(self):
         """argv after the command name, split into (flag tokens, positional args)."""
         seen_name = False
@@ -493,6 +539,20 @@ def _scan_split(text, split_pipe=False, pipes_only=False):
 
 _RECURSIVE_RE = re.compile(r"(^|(?<=[\s-]))(-[a-zA-Z]*r[a-zA-Z]*|--recursive)\b", re.IGNORECASE)
 _RISKY_TARGET_RE = re.compile(r"(\$\{?\w|[*?\[]|(^|\s)(/|~)($|\s|/))")
+
+
+def has_flag(sc, flag):
+    """Is `flag` present on this stage? Bundling-aware for short options.
+
+    `-f` must be found inside `-fdx`, and `--dry-run` must also match
+    `--dry-run=true`, or a rule written against flags is trivially evaded.
+    """
+    flags, _ = sc.flags_and_args()
+    if flag.startswith("--"):
+        return any(tok == flag or tok.startswith(flag + "=") for tok in flags)
+    letter = flag.lstrip("-")
+    return any(not tok.startswith("--") and tok.startswith("-") and letter in tok[1:]
+               for tok in flags)
 
 
 def _rm_commands(parsed):
@@ -638,8 +698,16 @@ def _load_rules_from(path, default_field="path"):
             # each argv token's basename, so it is anchored no matter how the
             # YAML writes it. See _verb_matches.
             "verb": re.compile(raw["verb"]) if raw.get("verb") else None,
+            # Optional inverse guard: verbs that make the match inert. `echo`
+            # printing a path is not a read of that path.
+            "not_verb": re.compile(raw["not_verb"]) if raw.get("not_verb") else None,
             "predicate": raw.get("predicate"),
+            # whole (default) | segment | argv (per path-like token) |
+            # redirect (per > / >> target)
             "scope": raw.get("scope", "whole"),
+            # Flags that disarm the rule: `npm publish --dry-run` uploads
+            # nothing, so warning about an irreversible publish is a false alarm.
+            "without_flags": tuple(raw.get("without_flags") or ()),
             # which subject string a string-rule matches against (see match_string_rules)
             "field": raw.get("field", default_field),
             # optional DETAIL_EXTRACTORS name: the concrete fact to name on the dialog
@@ -716,8 +784,22 @@ def _verb_matches(rule, parsed):
                for name in _command_names(sc))
 
 
+def _disarmed_by_flags(rule, parsed):
+    """True when a flag on the invoking stage makes this rule inapplicable."""
+    without = rule["without_flags"]
+    if not without:
+        return False
+    return any(has_flag(sc, flag)
+               for sc in parsed.simple_commands
+               for flag in without)
+
+
 def _rule_matches(rule, parsed):
     if not _verb_matches(rule, parsed):
+        return False
+    if rule["not_verb"] and any(rule["not_verb"].fullmatch(name)
+                                for sc in parsed.simple_commands
+                                for name in _command_names(sc)):
         return False
     if rule["predicate"]:
         fn = PREDICATES.get(rule["predicate"])
@@ -725,8 +807,17 @@ def _rule_matches(rule, parsed):
     regex = rule["regex"]
     if not regex:
         return False
-    if rule["scope"] == "segment":
+    if _disarmed_by_flags(rule, parsed):
+        return False
+    scope = rule["scope"]
+    if scope == "segment":
         return any(regex.search(stage) for stage in parsed.stages)
+    if scope == "argv":
+        return any(regex.search(tok)
+                   for sc in parsed.simple_commands for tok in sc.path_tokens())
+    if scope == "redirect":
+        return any(regex.search(target)
+                   for sc in parsed.simple_commands for target in sc.redirect_targets())
     # `code`, not `command`: a heredoc payload that is data must not be scanned
     # as if it were shell (see _strip_heredoc_payloads).
     return bool(regex.search(parsed.code))

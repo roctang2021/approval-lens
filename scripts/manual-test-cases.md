@@ -105,10 +105,11 @@
 
 测完还原默认档：`cp ~/.config/permission-lens/config.json.bak-high ~/.config/permission-lens/config.json`
 
-## 三、必须完全静默的（误报防线，共 35 条）
+## 三、必须完全静默的（误报防线，共 42 条）
 
-这些是日常命令，**任何一条弹框都是 bug**。跑之前先 `mkdir -p /tmp/pl-check`。其中最后几条是 M15/M16 修的两类：
-引号里提到危险模式、heredoc 里写关于危险命令的文档。
+这些是日常命令，**任何一条弹框都是 bug**。跑之前先 `mkdir -p /tmp/pl-check`。29–35 是 M15/M16 修的两类：
+引号里提到危险模式、heredoc 里写关于危险命令的文档。36–42 是 M27 修的两类：路径形状出现在
+散文里（提交信息、echo 参数）而非真的被读取，以及 `--dry-run` 这类什么都不传输的命令。
 
 1. `ls -la`
 2. `git status`
@@ -145,6 +146,13 @@
 33. `grep -n "git push --force" ci.sh`
 34. `echo "sudo rm -rf /"`
 35. `cat README.md \| grep terraform`
+36. `echo "~/.ssh/id_rsa"`
+37. `git commit -m "fix .env loading"`
+38. `echo "remember to add >> ~/.zshrc"`
+39. `npm publish --dry-run`
+40. `aws s3 rm s3://pl-check-no-such-bucket --recursive --dryrun`
+41. `echo "cat ~/.aws/credentials"`
+42. `git log --oneline \| grep zshrc`
 
 ## 四、非 Bash 工具
 
@@ -196,13 +204,11 @@ uv run ~/Code/oss/permission-lens/scripts/lens-status.py
 
 ## 六、已知盲区（跑到了不用报 bug，但欢迎确认）
 
-1. **引号里的路径仍会误报**：`echo "~/.ssh/id_rsa"` 会弹 🟡。`ssh-key-access`、
-   `aws-creds-access`、`dotenv-access`、`shell-history-access`、`shell-rc-append`
-   这五条是路径/重定向形状的，没有单一程序可作动词锚点，需要各自写 predicate。
-2. **明文混淆无规则**：`echo "<任意命令>" | bash` 不会命中。base64 与十六进制变体
+1. **明文混淆无规则**：`echo "<任意命令>" | bash` 不会命中。base64 与十六进制变体
    有规则，明文变体没有。
-3. **MultiEdit 未覆盖**：`tool_input` 结构没在真实 transcript 里验证过。
-4. **CLI / 无头模式未验证**：终端 `claude` 与 `-p` 模式下 hook 是否触发、reason 渲染
-   在哪，都还没实测过。
-5. **`security dump-keychain`** 会弹系统密码框——那是 macOS 自己弹的，取消即可。
+2. **MultiEdit 未覆盖**：`tool_input` 结构没在真实 transcript 里验证过。
+3. **`security dump-keychain`** 会弹系统密码框——那是 macOS 自己弹的，取消即可。
+
+已关闭：引号里的路径误报（M27 用 argv/redirect 作用域修掉，见第三节 36–42）；
+CLI 与无头模式（M23 实测，交互式 CLI 内联渲染、无头静默）。
 
