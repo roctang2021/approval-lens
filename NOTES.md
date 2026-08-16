@@ -771,3 +771,45 @@ the M18 defect class:
   `rm -rf /tmp/x` is high while `rm -rf ./build/x` is medium. Deliberate
   (documented at the predicate), but it means a /tmp stand-in cannot be used to
   exercise the medium rm rule — the checklist uses a relative path.
+
+## M20 (2026-08-14): 25 live cases, and what Tier 2 got wrong
+
+Owner ran all 25 section-2 cases against a real Desktop session at
+`min_severity: medium`. **Tier 1: 25/25 as predicted** — 23 dialogs, and the two
+🟢 low cases (#9 `.env`, #19 `git remote set-url`) correctly stayed silent
+below the gate. The rendered copy matched the generated checklist verbatim,
+which is what generating it from the hook rather than by hand was for.
+
+Tier 2 is the interesting half. Scored by hand across 25:
+
+- **Two factual errors, both inventing flag semantics.** #2 said `shred -u`
+  "controls how many times it overwrites" (it deallocates and removes the file;
+  `-n` sets the count). #14 said `sudo -n` means "runs without needing a
+  password" (it means fail rather than prompt — the opposite reassurance).
+  Both are stated with full confidence. A dialog that teaches the reader a
+  false fact about a flag is worse than one that says nothing.
+- **Root cause was our own prompt.** It asked the model to name "which flags
+  change what happens" — an explicit invitation to write a flag glossary from
+  memory. Changed in all six locales to ask for the VALUE an argument sets
+  (755, 777, the search term — all of which it got right), to state plainly
+  when a target evidently does not exist, and not to explain an individual
+  flag unless certain.
+- **Where Tier 2 genuinely earned its place**, and Tier 1 structurally cannot:
+  - *Predicting failure*: #15, #16, #21, #23, #25 each said outright that the
+    user/remote/file does not exist so the command will fail.
+  - *Correcting Tier 1's over-claim on this instance*: #6 Tier 1 says the data
+    "leaves this machine"; Tier 2 pointed out the destination is 127.0.0.1.
+    #20 Tier 1 says "published to the whole world"; Tier 2 pointed out the
+    registry is a local private one. The rules describe a CATEGORY, so on any
+    given instance they can overstate — this is the same defect class as the
+    removed web-insecure-http rule, except here Tier 2 catches it live.
+  - *Resolving the dynamic case*: #13 `eval "$(echo true)"` — explained that
+    this particular expansion is just `true`, while the pattern stays risky.
+- **Inconsistent about the failure prediction**: #17, #18, #22, #24 face the
+  same "target does not exist" fact and never mention it, while #15/#16/#23 do.
+  The prompt change targets this directly.
+- **Four near-pure restatements** (#1, #7, #8, #11) that add nothing over
+  Tier 1. #11 is the sharpest miss: `secret-tool` does not exist on macOS at
+  all, which is the one fact worth having.
+
+Version 0.16.0.
