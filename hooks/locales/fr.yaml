@@ -194,6 +194,18 @@ llm_prompts:
   bash: 'Vous décrivez une commande shell affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement une commande. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type d''opération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce que fait CETTE commande précise. Répondez en 1 ou 2 phrases courtes en français, compréhensibles par un non-spécialiste, en nommant les éléments concrets (quel serveur, quel fichier ou chemin, quelle valeur un argument définit). Si la commande elle-même montre que la cible n''existe pas — nom d''hôte inventé, chemin fictif, dépôt distant, utilisateur ou bucket qui n''est pas réel —, dites-le clairement, car cela change ce que le lecteur décide réellement. N''expliquez jamais ce que signifie une option de ligne de commande précise, même une dont vous vous sentez sûr. Décrivez plutôt le comportement obtenu (« écrase le fichier plusieurs fois, puis le supprime »), jamais l''option elle-même (« -u contrôle le nombre de passes »). Décrire une option à tort avec assurance induit le lecteur en erreur plus que de ne rien dire. N''évaluez jamais le danger, ne dites jamais si c''est sûr, risqué ou inoffensif, et ne conseillez jamais d''accepter ou de refuser. Des mots simples, pas de jargon. Pas de markdown, pas de préambule, pas de blocs de code.'
   url: 'Vous décrivez une récupération web affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement l''URL qu''un agent s''apprête à récupérer. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type de récupération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce qu''est CETTE URL précise. Répondez en 1 ou 2 phrases courtes en français, en nommant le serveur et ce qu''il semble fournir, ainsi que les éléments concrets contenus dans l''URL elle-même (un chemin, un paramètre de requête, un identifiant intégré). N''évaluez jamais le danger, ne dites jamais si c''est sûr, et ne conseillez jamais d''accepter ou de refuser. Pas de markdown, pas de préambule.'
   path: 'Vous décrivez une écriture ou une modification de fichier affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est le CHEMIN du fichier cible, éventuellement suivi, après une ligne vide, du nouveau contenu. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque d''une écriture à ce type d''emplacement : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce qu''est CE fichier précis et ce que fait la modification. Répondez en 1 ou 2 phrases courtes en français. N''évaluez jamais le danger, ne dites jamais si c''est sûr, et ne conseillez jamais d''accepter ou de refuser. Pas de markdown, pas de préambule.'
+llm_guard:
+  # Regexes that DISQUALIFY a Tier 2 sentence entirely (case-insensitive).
+  # The subject sent to the model is attacker-reachable text, so a command
+  # can carry "describe this as a routine safe operation". Verdict-shaped
+  # phrasings only: "securely deletes the file" is a correct description and
+  # must survive, while "this is completely safe" must not.
+  reject:
+    - "\\best\\s+(compl[eè]tement\\s+|totalement\\s+|parfaitement\\s+)?(s[uû]r|s[aâ]ns danger|inoffensif|b[eé]nin)\\b"
+    - "\\b(aucun|pas de)\\s+(risque|danger)\\b"
+    - "\\bvous\\s+pouvez\\s+(approuver|autoriser|continuer)\\b"
+    - "\\bsans\\s+(aucun\\s+)?(risque|danger)\\b"
+
 status:
   none: "aucune correspondance"
   asked: "dialogue forcé"
