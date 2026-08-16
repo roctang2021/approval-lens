@@ -54,6 +54,7 @@ import sys
 import threading
 import time
 import traceback
+from collections import namedtuple
 from pathlib import Path
 
 try:
@@ -64,6 +65,19 @@ except Exception:  # pragma: no cover - exercised only when pyyaml is missing
 # Tier 1 budget target: analysis must stay well under 50ms. See tests/test_performance.py.
 MAX_MESSAGE_CHARS = 500  # default; overridable via config "max_message_chars"
 LANG = "en"              # default; overridable via config "lang"
+
+# The supported surface for other callers (adapters, scripts/, tests). Names
+# outside this list are internals and may move without notice.
+__all__ = [
+    "assess", "build_message", "Assessment", "Analysis",
+    "load_config", "load_locale", "available_langs",
+    "Parsed", "analyze", "match_string_rules", "passes_threshold",
+    "render_reason", "extract_detail", "rule_text", "ui_text", "severity_label",
+    "load_rules", "load_web_rules", "load_path_rules",
+    "SEVERITY_ORDER", "SEVERITY_EMOJI", "TIER2_OUTCOMES",
+    "SURFACE_INTERACTIVE", "SURFACE_HEADLESS",
+    "claude_surface", "main",
+]
 
 RULES_PATH = Path(__file__).with_name("rules.yaml")           # Bash
 WEB_RULES_PATH = Path(__file__).with_name("rules_web.yaml")   # WebFetch (URL)
@@ -734,45 +748,6 @@ def match_string_rules(rules, subjects):
     return _sort_by_severity(matches)
 
 
-# ── neutral "what it does" summary ────────────────────────────────────────────
-
-# Verb phrasing lives in the locale files (`verbs` section), so a no-risk-match
-# notification still gets a line in the reader's language.
-_SUBCOMMAND_TOOLS = {"git", "npm", "pnpm", "yarn", "docker", "kubectl", "cargo", "go", "pip", "pip3", "brew", "gh"}
-
-
-def neutral_summary(parsed, lang=LANG):
-    locale = load_locale(lang)
-    runs = ui_text(locale, "runs", "Runs")
-    sc = parsed.simple_commands[0] if parsed.simple_commands else None
-    if not sc or not sc.name:
-        return ui_text(locale, "fallback_summary", "Runs a shell command")
-    name = sc.name
-    _, args = sc.flags_and_args()
-    if name in _SUBCOMMAND_TOOLS and args:
-        return f"{runs}: {name} {args[0]}"
-    verb = ui_text(locale, name, "", section="verbs")
-    return verb or f"{runs} `{name}`"
-
-
-# Grab the host from a URL without importing urllib (kept lazy for Tier 2);
-# strip any userinfo so credentials are never echoed into the summary.
-_URL_HOST_RE = re.compile(r"^[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
-
-
-def neutral_summary_web(url, lang=LANG):
-    label = ui_text(load_locale(lang), "fetches", "Fetches")
-    m = _URL_HOST_RE.search(url or "")
-    host = m.group(1) if m else (url or "").strip()[:60]
-    return f"{label} {host}" if host else label
-
-
-def neutral_summary_path(file_path, label_key, lang=LANG):
-    label = ui_text(load_locale(lang), label_key, label_key.capitalize())
-    base = os.path.basename((file_path or "").rstrip("/")) or (file_path or "")
-    return f"{label} {base}"
-
-
 # ── reason formatting ─────────────────────────────────────────────────────────
 #
 # The reason renders on the permission dialog as ONE flowing line (the dialog
@@ -844,18 +819,11 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     return _truncate(line, max_chars)
 
 
-# Entrypoints where no human is present to answer a prompt. Matched EXACTLY and
-# kept to surfaces actually observed, because the two mistakes are not equal:
-# mistaking interactive for headless only costs the explanation (the native
-# dialog still runs), while mistaking headless for interactive turns an
-# allowlisted call into a failure. An unknown or absent value therefore keeps
-# today's behavior rather than silencing the plugin.
-NON_INTERACTIVE_ENTRYPOINTS = frozenset({"sdk-cli", "sdk-py", "sdk-ts"})
-ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
-
-
-def is_non_interactive():
-    return os.environ.get(ENTRYPOINT_ENV, "").strip() in NON_INTERACTIVE_ENTRYPOINTS
+# Whether a human is standing by to answer a prompt. The core only ever
+# receives this as a value; discovering it is the adapter's job (see
+# claude_surface), because every host signals it differently.
+SURFACE_INTERACTIVE = "interactive"
+SURFACE_HEADLESS = "headless"
 
 
 def passes_threshold(matches, min_severity):
@@ -900,21 +868,21 @@ LLM_MAX_COMMAND_CHARS = 4000
 LLM_PROMPT_KINDS = ("bash", "url", "path")
 
 
-# Why Tier 2 did or didn't produce a line on the last analyzed call. Without
-# this, "no credential", "disabled", and "network error" all look identical
-# from the outside — the plugin just silently degrades to Tier 1. Surfaced by
-# scripts/lens-status.py.
+# Why Tier 2 did or didn't produce a line. Without it, "no credential",
+# "disabled" and "network error" all look identical from the outside — the
+# plugin just silently degrades to Tier 1. Surfaced by scripts/lens-status.py.
+#
+# It is RETURNED rather than stashed in a global: the outcome belongs to one
+# call, and a module-level slot made the heartbeat silently order-dependent on
+# Tier 2 (and needed a manual reset on the path that skips it).
 TIER2_OUTCOMES = ("off", "skipped", "cached", "no_credential", "empty", "ok", "error")
-_LAST_TIER2 = {"outcome": "off"}
 
-
-def _tier2_outcome(name):
-    _LAST_TIER2["outcome"] = name
-    return name
+Tier2Result = namedtuple("Tier2Result", "text outcome")
+TIER2_OFF = Tier2Result(None, "off")
 
 
 def tier2_explanation(subject, config, kind="bash", event=None):
-    """Return a one-line model-written explanation, or None (silent fallback).
+    """Tier2Result: a one-line model-written explanation, or None text.
 
     `subject` is the exact string sent to the model (command / URL / path[+content]);
     `kind` selects the system prompt. The developer's current request is added
@@ -922,32 +890,28 @@ def tier2_explanation(subject, config, kind="bash", event=None):
     ids, transcript) is ever sent. Whatever comes back can only be appended to
     the explanation — it never affects severity or whether the dialog appears.
     """
-    llm = config.get("llm")
-    _tier2_outcome("off")
-    if not isinstance(llm, dict) or not llm.get("enabled"):
-        return None  # gate is pre-try, so it must tolerate unvalidated configs
+    llm = config["llm"]
+    if not llm["enabled"]:
+        return TIER2_OFF
     try:
         if not subject or len(subject) > LLM_MAX_COMMAND_CHARS:
-            _tier2_outcome("skipped")
-            return None
+            return Tier2Result(None, "skipped")
         if kind not in LLM_PROMPT_KINDS:
             kind = "bash"
-        model, lang = llm["model"], config.get("lang", "en")
-        task = task_context(event) if (event and llm.get("send_task_context")) else ""
+        model, lang = llm["model"], config["lang"]
+        task = task_context(event) if (event and llm["send_task_context"]) else ""
         ttl_days = llm["cache_ttl_days"]
         # The task is part of the cache key: the same command under a different
         # request deserves a different answer.
         cache_path = _llm_cache_path(subject, model, lang, kind, task)
         cached = _cache_lookup(cache_path, ttl_days)
         if cached is not None:
-            _tier2_outcome("cached")
-            return _one_line(cached) or None
+            return Tier2Result(_one_line(cached) or None, "cached")
         credential = _resolve_credential(llm)
         if credential is None:
             # The common one, and previously invisible: a GUI-launched Claude
             # Code never sees shell exports.
-            _tier2_outcome("no_credential")
-            return None
+            return Tier2Result(None, "no_credential")
         timeout = llm["timeout_seconds"]
         text = _run_with_deadline(
             lambda: _post_messages_api(subject, model, lang, kind, credential,
@@ -956,17 +920,13 @@ def tier2_explanation(subject, config, kind="bash", event=None):
         )
         text = _one_line(text or "")
         if not text:
-            _tier2_outcome("empty")  # deadline hit, non-2xx, or unparseable
-            return None
+            return Tier2Result(None, "empty")  # deadline, non-2xx, unparseable
         if ttl_days > 0:  # ttl 0 disables the cache entirely — reads AND writes
             _cache_store(cache_path, text)
-        _tier2_outcome("ok")
-        return text
+        return Tier2Result(text, "ok")
     except Exception:
-        _tier2_outcome("error")
-        if os.environ.get("PERMISSION_LENS_DEBUG"):
-            _log_debug("tier2: " + traceback.format_exc())
-        return None
+        _log_debug("tier2: " + traceback.format_exc())
+        return Tier2Result(None, "error")
 
 
 def _one_line(text):
@@ -1064,8 +1024,7 @@ def _run_with_deadline(fn, seconds):
         try:
             box["value"] = fn()
         except Exception:
-            if os.environ.get("PERMISSION_LENS_DEBUG"):
-                _log_debug("tier2 fetch: " + traceback.format_exc())
+            _log_debug("tier2 fetch: " + traceback.format_exc())
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
@@ -1132,13 +1091,13 @@ def _cache_store(path, text):
                 pass
 
 
-# ── desktop notification channel ──────────────────────────────────────────────
+# ── task context (opt-in) ─────────────────────────────────────────────────────
 #
-# Opt-in second channel alongside the on-dialog reason. On PreToolUse it fires
-# BEFORE permission evaluation, so it also covers flagged calls the rules
-# auto-allow (no dialog ever appears for those — the notification is the only
-# signal). This is a best-effort SIDE EFFECT: it never touches stdout and any
-# failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
+# The one place the plugin reads what the human actually typed. Read from the
+# session transcript, one line, capped — and it leaves the machine only when
+# llm.send_task_context is explicitly on. It can enrich the Tier 2 sentence but
+# never influences severity or whether the dialog appears, because it is
+# attacker-reachable text like any other input.
 
 
 _TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024  # cap the scan on very long sessions
@@ -1221,7 +1180,7 @@ def plugin_version():
     return _VERSION
 
 
-def record_heartbeat(tool, matches, asked):
+def record_heartbeat(tool, matches, asked, tier2_outcome):
     try:
         path = _cache_dir() / HEARTBEAT_FILE
         now = time.time()
@@ -1250,7 +1209,7 @@ def record_heartbeat(tool, matches, asked):
         # "off" almost always and hide the real outcome.
         tier2 = state.get("tier2") if isinstance(state.get("tier2"), dict) else {}
         if asked:
-            tier2 = {"outcome": _LAST_TIER2["outcome"], "ts": now}
+            tier2 = {"outcome": tier2_outcome, "ts": now}
         fresh = {
             "version": 1,
             "running": plugin_version(),  # which build actually handled this call
@@ -1266,8 +1225,7 @@ def record_heartbeat(tool, matches, asked):
             json.dump(fresh, fh, ensure_ascii=False)
         os.replace(tmp, path)  # atomic; a concurrent hook loses a count, never the file
     except Exception:
-        if os.environ.get("PERMISSION_LENS_DEBUG"):
-            _log_debug("heartbeat: " + traceback.format_exc())
+        _log_debug("heartbeat: " + traceback.format_exc())
 
 
 def _nonneg_int(value):
@@ -1279,41 +1237,42 @@ def _nonneg_int(value):
 # ── per-tool analyzers ────────────────────────────────────────────────────────
 #
 # Each analyzer maps one tool's tool_input to a common Analysis:
-#   (matches, neutral_summary, tier2_subject, tier2_kind, detail_subject)
+#   Analysis(matches, tier2_subject, tier2_kind, detail_subject)
 # or None to stay silent (unknown/empty input → native dialog, no annotation).
 # tool_input field names verified from real transcripts (NOTES.md, item 1).
+#
+#   tier2_subject   what the model may see (path only, unless send_file_content)
+#   detail_subject  what the offline detail extractor reads — never file bodies
+
+Analysis = namedtuple("Analysis", "matches tier2_subject tier2_kind detail_subject")
 
 
-def _analyze_bash(tool_input, config, lang):
+def _analyze_bash(tool_input, config):
     command = tool_input.get("command")
     if not command or not command.strip():
         return None
     parsed = Parsed(command)
-    matches = analyze(parsed)
-    return matches, neutral_summary(parsed, lang), command, "bash", command
+    return Analysis(analyze(parsed), command, "bash", command)
 
 
-def _analyze_webfetch(tool_input, config, lang):
+def _analyze_webfetch(tool_input, config):
     url = tool_input.get("url")  # WebFetch: {url, prompt}
     if not url or not str(url).strip():
         return None
     url = str(url).strip()
-    matches = match_string_rules(load_web_rules(), {"url": url})
     # Send only the URL to Tier 2 — never the prompt (it may carry user data).
-    return matches, neutral_summary_web(url, lang), url, "url", url
+    return Analysis(match_string_rules(load_web_rules(), {"url": url}), url, "url", url)
 
 
-def _analyze_write(tool_input, config, lang):
-    return _analyze_file(tool_input, config, lang,
-                         content_key="content", label_key="writes")
+def _analyze_write(tool_input, config):
+    return _analyze_file(tool_input, config, content_key="content")
 
 
-def _analyze_edit(tool_input, config, lang):
-    return _analyze_file(tool_input, config, lang,
-                         content_key="new_string", label_key="edits")
+def _analyze_edit(tool_input, config):
+    return _analyze_file(tool_input, config, content_key="new_string")
 
 
-def _analyze_file(tool_input, config, lang, content_key, label_key):
+def _analyze_file(tool_input, config, content_key):
     # Write: {file_path, content}; Edit: {file_path, old_string, new_string}.
     path = tool_input.get("file_path")
     if not path or not str(path).strip():
@@ -1324,13 +1283,12 @@ def _analyze_file(tool_input, config, lang, content_key, label_key):
     subjects = {"path": os.path.expanduser(path)}
     if content:
         subjects["content"] = content
-    matches = match_string_rules(load_path_rules(), subjects)
     # Tier 2 subject is the PATH only by default. File content is a much larger
     # data surface, so it is sent only when llm.send_file_content is on.
     subject = path
-    if (config.get("llm") or {}).get("send_file_content") and content:
+    if config["llm"]["send_file_content"] and content:
         subject = f"{path}\n\n{content}"
-    return matches, neutral_summary_path(path, label_key, lang), subject, "path", path
+    return Analysis(match_string_rules(load_path_rules(), subjects), subject, "path", path)
 
 
 TOOL_ANALYZERS = {
@@ -1341,56 +1299,100 @@ TOOL_ANALYZERS = {
 }
 
 
-# ── entry point ───────────────────────────────────────────────────────────────
+# ── assessment core ───────────────────────────────────────────────────────────
+#
+# `assess` is the whole product as a function: event in, verdict out. It reads
+# no environment and performs no I/O beyond the rule/locale files and the
+# optional Tier 2 call, so every host adapter can share it unchanged. Anything
+# host-specific — how the event arrives, how the verdict is expressed, whether
+# a human is present — belongs to the adapter below.
 
-def build_message(event, config=None):
-    """Pure core: event dict -> the one-line ask reason, or None to print {}.
+Assessment = namedtuple("Assessment", "matches asked reason tier2_outcome")
+SILENT = Assessment(matches=(), asked=False, reason=None, tier2_outcome="off")
 
-    None means the plugin stays out of the way entirely: no decision field, no
-    forced prompt — allowlists and the native dialog behave as if it weren't
-    installed. A string means "ask" with that string as the on-dialog reason.
+
+def assess(event, config, surface=SURFACE_INTERACTIVE):
+    """Decide what, if anything, to say about one pending tool call.
+
+    `config` must come from load_config()/_validate_config(): every documented
+    key is then guaranteed present, which is why this function indexes directly
+    rather than defending against shapes that cannot occur.
+
+    `reason is None` means stay out of the way entirely — no decision field, no
+    forced prompt, allowlist and native dialog exactly as if the plugin were not
+    installed.
     """
-    config = config if config is not None else load_config()
-    tool_name = event.get("tool_name")
-    analyzer = TOOL_ANALYZERS.get(tool_name)
+    analyzer = TOOL_ANALYZERS.get(event.get("tool_name"))
     if analyzer is None:  # uncovered tool -> never interfere
-        return None
-    result = analyzer(event.get("tool_input") or {}, config, config["lang"])
-    if result is None:
-        return None
-    matches, neutral, subject, kind, detail_subject = result
-    asked = passes_threshold(matches, config["ask"]["min_severity"])
-    if asked and config["ask"].get("non_interactive", "silent") == "silent" \
-            and is_non_interactive():
-        # Nobody can answer, so "ask" would block rather than prompt.
+        return SILENT
+    analysis = analyzer(event.get("tool_input") or {}, config)
+    if analysis is None:  # unknown or empty input -> nothing to say
+        return SILENT
+
+    asked = passes_threshold(analysis.matches, config["ask"]["min_severity"])
+    if asked and surface == SURFACE_HEADLESS and config["ask"]["non_interactive"] == "silent":
+        # Nobody can answer, so "ask" fails the call instead of prompting.
         asked = False
-    # Tier 2 runs only for calls we're actually going to put on a dialog.
-    llm_text = None
-    if asked:
-        llm_text = tier2_explanation(subject, config, kind, event)
-    else:
-        _tier2_outcome("off")
-    # Heartbeat last: it records "this call was checked" even when the answer
-    # is {}, and it carries the Tier 2 outcome, so it must run after Tier 2.
-    record_heartbeat(tool_name, matches, asked)
     if not asked:
-        return None
+        return Assessment(analysis.matches, False, None, "off")
+
+    # Tier 2 runs only for calls that will actually reach a dialog.
+    tier2 = tier2_explanation(analysis.tier2_subject, config,
+                              analysis.tier2_kind, event)
     # detail_subject is the small, clean subject (command / URL / path) — never
     # file contents, so the detail can't leak a file body onto the dialog.
-    return render_reason(
-        matches,
+    reason = render_reason(
+        analysis.matches,
         lang=config["lang"],
         max_chars=config["max_message_chars"],
-        llm_text=llm_text,
-        detail=extract_detail(matches[0], None, detail_subject),
+        llm_text=tier2.text,
+        detail=extract_detail(analysis.matches[0], None, analysis.detail_subject),
     )
+    return Assessment(analysis.matches, True, reason, tier2.outcome)
+
+
+def build_message(event, config=None, surface=SURFACE_INTERACTIVE):
+    """assess() plus the heartbeat: the reason string, or None to print {}.
+
+    Kept as the convenience entry point for callers that only want the text.
+    """
+    config = config if config is not None else load_config()
+    verdict = assess(event, config, surface)
+    # Heartbeat last: it records "this call was checked" even when the answer is
+    # {}, and it carries the Tier 2 outcome.
+    record_heartbeat(event.get("tool_name"), verdict.matches, verdict.asked,
+                     verdict.tier2_outcome)
+    return verdict.reason
+
+
+# ── Claude Code adapter ───────────────────────────────────────────────────────
+#
+# Everything below is specific to ONE host: the stdin event shape, the
+# `hookSpecificOutput` response protocol, and how to tell whether a human is
+# present. A second host means a second adapter, not a second core.
+
+# Entrypoints where no human is present to answer a prompt. Matched EXACTLY and
+# kept to surfaces actually observed, because the two mistakes are not equal:
+# mistaking interactive for headless only costs the explanation (the native
+# dialog still runs), while mistaking headless for interactive turns an
+# allowlisted call into a failure. An unknown or absent value therefore keeps
+# the asking behavior rather than silencing the plugin.
+NON_INTERACTIVE_ENTRYPOINTS = frozenset({"sdk-cli", "sdk-py", "sdk-ts"})
+ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
+
+
+def claude_surface(environ=None):
+    """Which surface this Claude Code process is: interactive or headless."""
+    environ = os.environ if environ is None else environ
+    value = environ.get(ENTRYPOINT_ENV, "").strip()
+    return SURFACE_HEADLESS if value in NON_INTERACTIVE_ENTRYPOINTS else SURFACE_INTERACTIVE
 
 
 def main():
     try:
         raw = sys.stdin.read()
         event = json.loads(raw) if raw.strip() else {}
-        reason = build_message(event, load_config())
+        reason = build_message(event, load_config(), claude_surface())
         if reason is None:
             # Nothing to say — native permission behavior, untouched.
             print("{}")
@@ -1406,13 +1408,20 @@ def main():
             }, ensure_ascii=False))
     except Exception:
         # Fail open: never block or break the session. Exit 2 would BLOCK here.
-        if os.environ.get("PERMISSION_LENS_DEBUG"):
-            _log_debug(traceback.format_exc())
+        _log_debug("main: " + traceback.format_exc())
         print("{}")
     sys.exit(0)
 
 
 def _log_debug(text):
+    """Append to the debug log when PERMISSION_LENS_DEBUG is set; else nothing.
+
+    The gate lives here rather than at each call site so that adding a trace to
+    a swallowed exception costs one line. Silently discarded failures are how
+    this project lost hours more than once.
+    """
+    if not os.environ.get("PERMISSION_LENS_DEBUG"):
+        return
     try:
         cache = _cache_dir()  # honors PERMISSION_LENS_CACHE_DIR like all writes
         cache.mkdir(parents=True, exist_ok=True)

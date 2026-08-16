@@ -12,6 +12,28 @@ CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 # Make hooks/permission_lens.py importable as `permission_lens`.
 sys.path.insert(0, str(HOOKS_DIR))
 
+import permission_lens as pl  # noqa: E402
+
+
+def config(**raw):
+    """A validated config, built the only sanctioned way.
+
+    Hand-assembling a config dict is what let tests drift from the shape the
+    code indexes into: a test that replaced the whole `ask` sub-dict dropped a
+    key the module then required. _validate_config is the single constructor,
+    so tests exercise exactly the shape production sees.
+    """
+    return pl._validate_config(raw)
+
+
+def llm_config(**overrides):
+    """A validated config with Tier 2 enabled."""
+    return config(llm={"enabled": True, **overrides})
+
+
+def bash_event(command):
+    return {"tool_name": "Bash", "tool_input": {"command": command}}
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_cache(monkeypatch, tmp_path):

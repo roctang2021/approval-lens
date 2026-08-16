@@ -13,6 +13,8 @@ sys.path.insert(0, str(HOOKS_DIR))
 
 import permission_lens as pl  # noqa: E402
 
+import conftest  # noqa: E402
+
 SCRIPT = HOOKS_DIR / "permission_lens.py"
 
 
@@ -127,18 +129,8 @@ def test_en_reason_uses_english_and_stays_single_line():
     assert "\n" not in reason
 
 
-def test_zh_neutral_summary():
-    parsed = pl.Parsed("ls -la")
-    assert pl.neutral_summary(parsed, "zh") == "列出目录内容"
-    assert pl.neutral_summary(parsed, "en") == "Lists directory contents"
-
-
-# ── ask.min_severity gate ─────────────────────────────────────────────────────
-
 def _config_with(**overrides):
-    cfg = json.loads(json.dumps(pl.DEFAULT_CONFIG))
-    cfg.update(overrides)
-    return cfg
+    return conftest.config(**overrides)
 
 
 def _event(command):
@@ -203,46 +195,55 @@ def test_subprocess_honors_config_lang_zh(tmp_path):
 
 
 # ── non-interactive surfaces (measured 2026-08-14) ────────────────────────────
+#
+# Two layers, tested apart: the ADAPTER decides which surface this process is
+# (host-specific, reads the environment), the CORE decides what a given surface
+# means (pure, takes it as an argument). Testing them together through the
+# environment is what let an earlier version of these tests pass vacuously —
+# they set the env var but asserted on a command that was below the gate
+# anyway, so they would have passed with the feature deleted.
 
-def test_headless_entrypoint_silences_the_ask(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint,expected", [
+    ("sdk-cli", pl.SURFACE_HEADLESS),
+    ("sdk-py", pl.SURFACE_HEADLESS),
+    ("cli", pl.SURFACE_INTERACTIVE),
+    ("claude-desktop", pl.SURFACE_INTERACTIVE),
+    ("something-new", pl.SURFACE_INTERACTIVE),   # unknown -> keep asking
+    ("", pl.SURFACE_INTERACTIVE),                # absent  -> keep asking
+])
+def test_claude_surface_reads_the_entrypoint(entrypoint, expected):
+    assert pl.claude_surface({pl.ENTRYPOINT_ENV: entrypoint}) == expected
+
+
+def test_claude_surface_without_the_variable():
+    assert pl.claude_surface({}) == pl.SURFACE_INTERACTIVE
+
+
+MEDIUM_EVENT = conftest.bash_event("sudo -n rm /tmp/x")
+
+
+def test_headless_surface_silences_the_ask():
     """`claude -p` has nobody to answer, so "ask" fails the call instead of
     prompting — measured: an allowlisted `sudo` came back "blocked by a
-    permission hook ... it didn't execute". Silence keeps the plugin out of
-    the decision, which is the never-gatekeeper core."""
-    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
-    monkeypatch.setenv(pl.ENTRYPOINT_ENV, "sdk-cli")
-    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
-    assert pl.build_message(event, _config_with()) is None
+    permission hook ... it didn't execute". Silence keeps the plugin out of the
+    decision, which is the never-gatekeeper core."""
+    cfg = _config_with(ask={"min_severity": "medium"})
+    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_INTERACTIVE).reason is not None
+    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_HEADLESS).reason is None
 
 
-def test_interactive_entrypoints_still_ask(monkeypatch, tmp_path):
-    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
-    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
-    cfg = _config_with()
-    cfg["ask"]["min_severity"] = "medium"
-    for value in ("cli", "claude-desktop", "", "something-new"):
-        monkeypatch.setenv(pl.ENTRYPOINT_ENV, value)
-        assert pl.build_message(event, cfg) is not None, value
+def test_headless_still_analyzes_and_reports_matches():
+    """Silent is not blind: the call is still checked, so the heartbeat and any
+    future adapter can see what was found."""
+    verdict = pl.assess(MEDIUM_EVENT, _config_with(ask={"min_severity": "medium"}),
+                        pl.SURFACE_HEADLESS)
+    assert verdict.asked is False
+    assert [m["id"] for m in verdict.matches] == ["sudo"]
 
 
-def test_unset_entrypoint_still_asks(monkeypatch, tmp_path):
-    """An absent variable must not silence the plugin: the failure we can
-    afford is a missing explanation, not a blocked call."""
-    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
-    monkeypatch.delenv(pl.ENTRYPOINT_ENV, raising=False)
-    cfg = _config_with()
-    cfg["ask"]["min_severity"] = "medium"
-    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
-    assert pl.build_message(event, cfg) is not None
-
-
-def test_non_interactive_opt_out_keeps_asking(monkeypatch, tmp_path):
-    monkeypatch.setenv(pl.CACHE_DIR_ENV, str(tmp_path))
-    monkeypatch.setenv(pl.ENTRYPOINT_ENV, "sdk-cli")
-    cfg = _config_with()
-    cfg["ask"] = {"min_severity": "medium", "non_interactive": "ask"}
-    event = {"tool_name": "Bash", "tool_input": {"command": "sudo -n rm /tmp/x"}}
-    assert pl.build_message(event, cfg) is not None
+def test_headless_opt_out_keeps_asking():
+    cfg = _config_with(ask={"min_severity": "medium", "non_interactive": "ask"})
+    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_HEADLESS).reason is not None
 
 
 def test_non_interactive_config_is_validated():

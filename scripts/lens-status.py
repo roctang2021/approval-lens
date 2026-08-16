@@ -76,9 +76,11 @@ def _installed_versions():
                 found.add(v)
     except Exception:
         return []
-    def key(v):
-        return [int(p) if p.isdigit() else -1 for p in v.split(".")]
-    return sorted(found, key=key)
+    return sorted(found, key=_version_key)
+
+
+def _version_key(v):
+    return [int(part) if part.isdigit() else -1 for part in v.split(".")]
 
 
 def _age(locale, seconds):
@@ -113,9 +115,12 @@ def main():
     # The trap this catches: publish succeeded, so the newest build is on disk
     # and the repo looks current, yet every call is still handled by whatever
     # version the session bound to at startup.
-    if newest and running and newest != running:
-        print(f"⚠️  已安装 {'、'.join(installed)}，但最近一次调用由 {running} 处理"
-              f" —— 重启 Claude Code 才会切到 {newest}")
+    # Strictly newer, not merely different: running a build that is AHEAD of the
+    # cache is the normal state when testing from the checkout, and warning
+    # about it told the reader to restart in order to downgrade.
+    if newest and running and _version_key(newest) > _version_key(running):
+        print(f"⚠️  已安装 {newest}，但最近一次调用由 {running} 处理"
+              f" —— 重启 Claude Code 才会切过去")
     last = hb.get("last")
     if not isinstance(last, dict) or not isinstance(last.get("ts"), (int, float)):
         print(_text(locale, "empty").format(path=hb_path))

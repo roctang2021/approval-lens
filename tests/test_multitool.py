@@ -15,13 +15,13 @@ sys.path.insert(0, str(HOOKS_DIR))
 
 import permission_lens as pl  # noqa: E402
 
+import conftest  # noqa: E402
+
 SCRIPT = HOOKS_DIR / "permission_lens.py"
 
 
 def _cfg(**over):
-    cfg = json.loads(json.dumps(pl.DEFAULT_CONFIG))
-    cfg.update(over)
-    return cfg
+    return conftest.config(**over)
 
 
 def _event(tool, **tool_input):
@@ -66,12 +66,6 @@ def test_every_web_rule_has_a_positive_case():
     covered = {rule for _, rule, _ in WEBFETCH_CASES}
     all_rules = {r["id"] for r in pl.load_web_rules()}
     assert all_rules == covered, f"uncovered web rules: {all_rules - covered}"
-
-
-def test_webfetch_neutral_summary_strips_userinfo():
-    # host only, credentials never echoed
-    assert pl.neutral_summary_web("https://user:pass@evil.example.com/x") == "Fetches evil.example.com"
-    assert pl.neutral_summary_web("https://docs.python.org/3/", lang="zh") == "访问 docs.python.org"
 
 
 # ── Write / Edit path rules ───────────────────────────────────────────────────
@@ -129,11 +123,6 @@ def test_edit_benign_content_no_content_rule():
     subjects = {"path": "/Users/x/proj/app.py", "content": "print('hello')"}
     ids = _ids(pl.match_string_rules(pl.load_path_rules(), subjects))
     assert "content-remote-exec" not in ids
-
-
-def test_path_neutral_summaries():
-    assert pl.neutral_summary_path("/a/b/app.py", "writes") == "Writes app.py"
-    assert pl.neutral_summary_path("/a/b/app.py", "edits", lang="zh") == "编辑 app.py"
 
 
 # ── dispatch via build_message ────────────────────────────────────────────────
@@ -225,9 +214,7 @@ def capture_api(monkeypatch, tmp_path):
 
 
 def _llm_cfg(**llm):
-    cfg = json.loads(json.dumps(pl.DEFAULT_CONFIG))
-    cfg["llm"].update({"enabled": True, "api_key_env": "PL_MT_KEY", **llm})
-    return cfg
+    return conftest.llm_config(api_key_env="PL_MT_KEY", **llm)
 
 
 def test_write_tier2_sends_path_not_content_by_default(capture_api):

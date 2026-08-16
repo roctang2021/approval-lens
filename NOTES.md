@@ -1064,3 +1064,48 @@ round erred toward treating text as code; this one erred toward treating code
 as text.
 
 Version 0.23.0. 418 tests.
+
+## M26 (2026-08-14): Phase 0 — a core that no host owns
+
+Groundwork for running on hosts other than Claude Code. The engine was already
+portable in substance; what tied it down was structure.
+
+- **`assess(event, config, surface) -> Assessment` is now the product as a
+  function.** It reads no environment and returns a value describing what it
+  found (matches, asked, reason, tier2 outcome). `main()` is explicitly the
+  Claude Code adapter: stdin shape, `hookSpecificOutput` protocol, and
+  `claude_surface()` env probing all live there. A second host is a second
+  adapter, not a second engine.
+- **Interactivity became a parameter.** `build_message` used to call
+  `is_non_interactive()` internally, so the "pure core" read
+  `CLAUDE_CODE_ENTRYPOINT` — impure and Claude-specific in one move. The core
+  now takes SURFACE_INTERACTIVE/SURFACE_HEADLESS; discovering it is the
+  adapter's job because every host signals it differently.
+- **The Tier 2 outcome is returned, not stashed.** `_LAST_TIER2` made the
+  heartbeat silently order-dependent on Tier 2 and needed a manual reset on the
+  skip path. `tier2_explanation` now returns `Tier2Result(text, outcome)` and
+  the heartbeat takes it as an argument — the ordering constraint is now a
+  parameter instead of a comment.
+- **`_validate_config` is the only sanctioned constructor**, including in
+  tests. Hand-built config dicts were how the shape drifted: a test that
+  replaced the whole `ask` sub-dict dropped a key the module required, and the
+  fix at the time was to soften the module with `.get(...)`, which made
+  "config that never went through the validator" a supported input. Every test
+  now builds through `conftest.config()`, so the module indexes directly.
+- **Dead code deleted.** The neutral-summary chain (3 functions, a tool table,
+  a duplicate URL regex) was computed on every call and discarded by the only
+  caller — left behind when the notification channel was removed, and kept
+  green by its own tests. With it went 120 dead locale entries (20 verbs × 6
+  languages) and 5 of 9 `ui` keys. `__all__` now names the supported surface so
+  the next reader can tell API from internals.
+
+**Two vacuous tests found by the change.** The headless tests set the entrypoint
+variable but asserted on a command below the default gate, so they passed with
+or without the feature; they now test the adapter's env mapping and the core's
+surface behavior separately, and were confirmed by deleting the feature and
+watching them fail. Separately `lens-status` warned "restart to switch to
+0.22.0" while 0.23.0 was running, because it compared versions for inequality
+rather than order — a diagnostic telling the reader to restart in order to
+downgrade.
+
+Version 0.24.0. 421 tests.

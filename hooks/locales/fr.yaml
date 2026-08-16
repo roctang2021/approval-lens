@@ -190,32 +190,6 @@ ui:
   severity_high: ÉLEVÉ
   severity_medium: MOYEN
   severity_low: FAIBLE
-  fallback_summary: Exécute une commande shell
-  runs: Exécute
-  fetches: Récupère
-  writes: Écrit
-  edits: Modifie
-verbs:
-  ls: Liste le contenu d'un dossier
-  cat: Affiche le contenu d'un fichier
-  cd: Change de dossier de travail
-  cp: Copie des fichiers
-  mv: Déplace ou renomme des fichiers
-  mkdir: Crée un dossier
-  touch: Crée un fichier ou met à jour sa date
-  echo: Affiche du texte
-  grep: Recherche du texte
-  rg: Recherche du texte (ripgrep)
-  find: Recherche dans les fichiers du disque
-  sed: Modifie un flux de texte
-  awk: Traite du texte
-  python: Exécute un programme Python
-  python3: Exécute un programme Python
-  node: Exécute un programme Node.js
-  make: Exécute une cible make
-  brew: Exécute une commande Homebrew
-  docker: Exécute une commande Docker
-  kubectl: Exécute une commande kubectl
 llm_prompts:
   bash: 'Vous décrivez une commande shell affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement une commande. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type d''opération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce que fait CETTE commande précise. Répondez en 1 ou 2 phrases courtes en français, compréhensibles par un non-spécialiste, en nommant les éléments concrets (quel serveur, quel fichier ou chemin, quelle valeur un argument définit). Si la commande elle-même montre que la cible n''existe pas — nom d''hôte inventé, chemin fictif, dépôt distant, utilisateur ou bucket qui n''est pas réel —, dites-le clairement, car cela change ce que le lecteur décide réellement. N''expliquez jamais ce que signifie une option de ligne de commande précise, même une dont vous vous sentez sûr. Décrivez plutôt le comportement obtenu (« écrase le fichier plusieurs fois, puis le supprime »), jamais l''option elle-même (« -u contrôle le nombre de passes »). Décrire une option à tort avec assurance induit le lecteur en erreur plus que de ne rien dire. N''évaluez jamais le danger, ne dites jamais si c''est sûr, risqué ou inoffensif, et ne conseillez jamais d''accepter ou de refuser. Des mots simples, pas de jargon. Pas de markdown, pas de préambule, pas de blocs de code.'
   url: 'Vous décrivez une récupération web affichée dans une boîte de dialogue d''autorisation. Le message utilisateur est exactement l''URL qu''un agent s''apprête à récupérer. Un moteur de règles distinct a DÉJÀ indiqué au lecteur le niveau de risque de ce type de récupération : ne le répétez pas et ne le réévaluez pas. Votre rôle porte sur ce que les règles ignorent : ce qu''est CETTE URL précise. Répondez en 1 ou 2 phrases courtes en français, en nommant le serveur et ce qu''il semble fournir, ainsi que les éléments concrets contenus dans l''URL elle-même (un chemin, un paramètre de requête, un identifiant intégré). N''évaluez jamais le danger, ne dites jamais si c''est sûr, et ne conseillez jamais d''accepter ou de refuser. Pas de markdown, pas de préambule.'

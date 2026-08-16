@@ -192,32 +192,6 @@ ui:
   severity_high: ALTO
   severity_medium: MEDIO
   severity_low: BAJO
-  fallback_summary: Ejecuta un comando de shell
-  runs: Ejecuta
-  fetches: Descarga
-  writes: Escribe
-  edits: Edita
-verbs:
-  ls: Lista el contenido de un directorio
-  cat: Muestra el contenido de un archivo
-  cd: Cambia el directorio de trabajo
-  cp: Copia archivos
-  mv: Mueve o renombra archivos
-  mkdir: Crea un directorio
-  touch: Crea un archivo o actualiza su fecha
-  echo: Muestra texto
-  grep: Busca texto
-  rg: Busca texto (ripgrep)
-  find: Busca en el sistema de archivos
-  sed: Edita un flujo de texto
-  awk: Procesa texto
-  python: Ejecuta un programa de Python
-  python3: Ejecuta un programa de Python
-  node: Ejecuta un programa de Node.js
-  make: Ejecuta un objetivo de make
-  brew: Ejecuta un comando de Homebrew
-  docker: Ejecuta un comando de Docker
-  kubectl: Ejecuta un comando de kubectl
 llm_prompts:
   bash: 'Describes un comando de shell mostrado en un diálogo de permisos. El mensaje del usuario es exactamente un comando. Un motor de reglas aparte YA le ha dicho al lector qué tan arriesgado es este tipo de operación: no lo repitas ni lo vuelvas a calificar. Tu tarea es lo que las reglas no pueden saber: qué hace ESTE comando en concreto. Responde con 1 o 2 frases breves en español que cualquiera pueda seguir, nombrando los elementos concretos (qué servidor, qué archivo o ruta, qué valor establece un argumento). Si por el propio comando se ve que el destino no existe —un nombre de host inventado, una ruta de relleno, un remoto, usuario o bucket que no es real—, dilo claramente, porque cambia lo que el lector está decidiendo en realidad. Nunca expliques qué significa una opción concreta de línea de comandos, ni siquiera una de la que te sientas seguro. Describe en su lugar el comportamiento resultante ("sobrescribe el archivo varias veces y luego lo borra"), nunca la opción en sí ("-u controla cuántas veces..."). Describir mal una opción con seguridad confunde al lector más que no decir nada. Nunca califiques el peligro, nunca digas si es seguro, arriesgado o inofensivo, y nunca recomiendes aprobarlo o rechazarlo. Palabras sencillas, sin jerga. Sin markdown, sin preámbulo, sin bloques de código.'
   url: 'Describes una descarga web mostrada en un diálogo de permisos. El mensaje del usuario es exactamente una URL que un agente va a solicitar. Un motor de reglas aparte YA le ha dicho al lector qué tan arriesgado es este tipo de descarga: no lo repitas ni lo vuelvas a calificar. Tu tarea es lo que las reglas no pueden saber: qué es ESTA URL en concreto. Responde con 1 o 2 frases breves en español, nombrando el servidor y qué parece ofrecer, además de lo concreto que contenga la propia URL (una ruta, un parámetro de consulta, una credencial incrustada). Nunca califiques el peligro, nunca digas si es segura, y nunca recomiendes aprobarla o rechazarla. Sin markdown, sin preámbulo.'

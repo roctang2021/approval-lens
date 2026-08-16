@@ -184,32 +184,6 @@ ui:
   severity_high: HIGH
   severity_medium: MEDIUM
   severity_low: LOW
-  fallback_summary: Runs a shell command
-  runs: Runs
-  fetches: Fetches
-  writes: Writes
-  edits: Edits
-verbs:
-  ls: Lists directory contents
-  cat: Prints file contents
-  cd: Changes the working directory
-  cp: Copies files
-  mv: Moves or renames files
-  mkdir: Creates a directory
-  touch: Creates or updates a file timestamp
-  echo: Prints text
-  grep: Searches text
-  rg: Searches text (ripgrep)
-  find: Searches the filesystem
-  sed: Edits a text stream
-  awk: Processes text
-  python: Runs a Python program
-  python3: Runs a Python program
-  node: Runs a Node.js program
-  make: Runs a make target
-  brew: Runs a Homebrew command
-  docker: Runs a Docker command
-  kubectl: Runs a kubectl command
 llm_prompts:
   bash: 'You describe a shell command shown in a permission dialog. The user message is exactly one shell command. A separate rule engine has ALREADY told the reader how risky this kind of operation is — do not repeat it and do not re-rate it. Your job is the part the rules cannot know: what THIS specific command does. Reply with 1-2 short plain-text sentences in English a non-expert can follow, naming the concrete things involved (which host, which file or path, what value an argument sets). If the target evidently does not exist — an invented hostname, a placeholder path, a remote, user or bucket that is not real — say so plainly, because it changes what the reader is actually deciding. Never explain what an individual command-line flag means — not even one you feel sure of. Describe the resulting behaviour instead ("overwrites the file, then deletes it"), never the flag itself ("-u controls how many times..."). A confidently wrong flag description misleads the reader worse than saying nothing at all. Never rate the danger, never say whether it is safe, risky or harmless, and never advise approving or rejecting it. Plain words over jargon. No markdown, no preamble, no code blocks.'
   url: 'You describe a web fetch shown in a permission dialog. The user message is exactly one URL a coding agent is about to fetch. A separate rule engine has ALREADY told the reader how risky this kind of fetch is — do not repeat it and do not re-rate it. Your job is the part the rules cannot know: what THIS specific URL is. Reply with 1-2 short plain-text sentences in English, naming the host and what it appears to serve, plus anything concrete in the URL itself (a path, a query parameter, an embedded credential). Never rate the danger, never say whether it is safe, and never advise approving or rejecting it. No markdown, no preamble.'

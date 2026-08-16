@@ -21,16 +21,17 @@ TOKEN_ENV = "PERMISSION_LENS_TEST_AUTH_TOKEN"
 
 
 def _config(**llm_overrides):
+    # Built through the real validator, never by hand: _validate_config is the
+    # only thing that may construct a config, so the shape the code indexes into
+    # is the shape the tests exercise.
     # Test-specific env var names keep these hermetic: a real ANTHROPIC_API_KEY
     # or ANTHROPIC_AUTH_TOKEN in the developer's shell can't leak in.
-    cfg = json.loads(json.dumps(pl.DEFAULT_CONFIG))
-    cfg["llm"].update({
+    return pl._validate_config({"llm": {
         "enabled": True,
         "api_key_env": KEY_ENV,
         "auth_token_env": TOKEN_ENV,
         **llm_overrides,
-    })
-    return cfg
+    }})
 
 
 @pytest.fixture(autouse=True)
@@ -81,7 +82,7 @@ def _forbid_network(monkeypatch):
 def test_disabled_by_default_never_touches_network(monkeypatch):
     calls = _forbid_network(monkeypatch)
     cfg = json.loads(json.dumps(pl.DEFAULT_CONFIG))  # llm.enabled = False
-    assert pl.tier2_explanation(COMMAND, cfg) is None
+    assert pl.tier2_explanation(COMMAND, cfg).text is None
     assert calls == []
 
 
@@ -89,21 +90,29 @@ def test_no_credential_at_all_skips_silently(monkeypatch):
     calls = _forbid_network(monkeypatch)
     monkeypatch.delenv(KEY_ENV, raising=False)
     monkeypatch.delenv(TOKEN_ENV, raising=False)
-    assert pl.tier2_explanation(COMMAND, _config()) is None
+    assert pl.tier2_explanation(COMMAND, _config()).text is None
     assert calls == []
 
 
 def test_oversized_command_skips(monkeypatch):
     calls = _forbid_network(monkeypatch)
-    assert pl.tier2_explanation("echo " + "A" * 100_000, _config()) is None
+    assert pl.tier2_explanation("echo " + "A" * 100_000, _config()).text is None
     assert calls == []
 
 
-def test_non_dict_llm_config_is_treated_as_disabled(monkeypatch):
-    # The opt-in gate sits before the try, so it must tolerate junk configs
-    # passed straight to build_message() without load_config() validation.
+def test_junk_llm_config_is_normalized_by_the_validator(monkeypatch):
+    """Junk configs are the VALIDATOR's problem, not Tier 2's.
+
+    Tier 2 used to re-check the shape itself, which quietly made "a config that
+    never went through _validate_config" a supported input and left every other
+    reader unsure which keys are guaranteed. The validator owns the shape; Tier 2
+    trusts it and only has to answer "is this enabled".
+    """
     calls = _forbid_network(monkeypatch)
-    assert pl.tier2_explanation(COMMAND, {"llm": "yes"}) is None
+    for junk in ({"llm": "yes"}, {"llm": None}, {"llm": []}, {}):
+        cfg = pl._validate_config(junk)
+        assert cfg["llm"]["enabled"] is False
+        assert pl.tier2_explanation(COMMAND, cfg).text is None
     assert calls == []
 
 
@@ -112,8 +121,8 @@ def test_non_dict_llm_config_is_treated_as_disabled(monkeypatch):
 def test_request_contains_only_command_and_static_prompt(monkeypatch):
     captured = []
     _install_fake_api(monkeypatch, capture=captured)
-    text = pl.tier2_explanation(COMMAND, _config())
-    assert text == "Downloads a script and runs it."
+    result = pl.tier2_explanation(COMMAND, _config())
+    assert result == pl.Tier2Result("Downloads a script and runs it.", "ok")
 
     (req, timeout), = captured
     assert req.full_url == pl.LLM_API_URL
@@ -167,7 +176,7 @@ def test_zh_config_uses_zh_prompt(monkeypatch):
 
 def test_multiline_reply_collapsed_to_one_line(monkeypatch):
     _install_fake_api(monkeypatch, text="Line one.\n  Line two.")
-    assert pl.tier2_explanation(COMMAND, _config()) == "Line one. Line two."
+    assert pl.tier2_explanation(COMMAND, _config()).text == "Line one. Line two."
 
 
 # ── cache ─────────────────────────────────────────────────────────────────────
@@ -175,8 +184,10 @@ def test_multiline_reply_collapsed_to_one_line(monkeypatch):
 def test_second_call_served_from_cache(monkeypatch):
     _install_fake_api(monkeypatch)
     first = pl.tier2_explanation(COMMAND, _config())
+    assert first.outcome == "ok"
     calls = _forbid_network(monkeypatch)
-    assert pl.tier2_explanation(COMMAND, _config()) == first
+    second = pl.tier2_explanation(COMMAND, _config())
+    assert second == pl.Tier2Result(first.text, "cached")
     assert calls == []
 
 
@@ -212,7 +223,7 @@ def test_expired_cache_entry_refetches(monkeypatch):
 
     captured = []
     _install_fake_api(monkeypatch, text="fresh answer", capture=captured)
-    assert pl.tier2_explanation(COMMAND, cfg) == "fresh answer"
+    assert pl.tier2_explanation(COMMAND, cfg).text == "fresh answer"
     assert len(captured) == 1
 
 
@@ -222,7 +233,7 @@ def test_corrupt_cache_entry_is_a_miss(monkeypatch):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{{{ not json", encoding="utf-8")
     _install_fake_api(monkeypatch, text="recovered")
-    assert pl.tier2_explanation(COMMAND, cfg) == "recovered"
+    assert pl.tier2_explanation(COMMAND, cfg).text == "recovered"
 
 
 # ── failure paths degrade silently ────────────────────────────────────────────
@@ -231,7 +242,7 @@ def test_network_error_returns_none(monkeypatch):
     def fail(*args, **kwargs):
         raise OSError("connection refused")
     monkeypatch.setattr(urllib.request, "urlopen", fail)
-    assert pl.tier2_explanation(COMMAND, _config()) is None
+    assert pl.tier2_explanation(COMMAND, _config()).text is None
 
 
 def test_unparseable_response_returns_none(monkeypatch):
@@ -239,12 +250,12 @@ def test_unparseable_response_returns_none(monkeypatch):
         def read(self):
             return b"<html>not json</html>"
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Garbage({}))
-    assert pl.tier2_explanation(COMMAND, _config()) is None
+    assert pl.tier2_explanation(COMMAND, _config()).text is None
 
 
 def test_empty_content_returns_none(monkeypatch):
     _install_fake_api(monkeypatch, text="   ")
-    assert pl.tier2_explanation(COMMAND, _config()) is None
+    assert pl.tier2_explanation(COMMAND, _config()).text is None
 
 
 def test_hard_deadline_abandons_slow_call(monkeypatch):
@@ -255,7 +266,7 @@ def test_hard_deadline_abandons_slow_call(monkeypatch):
     start = time.monotonic()
     result = pl.tier2_explanation(COMMAND, _config(timeout_seconds=0.2))
     elapsed = time.monotonic() - start
-    assert result is None
+    assert result == pl.Tier2Result(None, "empty")
     assert elapsed < 1.0, f"deadline not enforced: took {elapsed:.2f}s"
 
 

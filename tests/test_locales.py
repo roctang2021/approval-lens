@@ -18,9 +18,9 @@ sys.path.insert(0, str(HOOKS_DIR))
 import permission_lens as pl  # noqa: E402
 
 LOCALES_DIR = HOOKS_DIR / "locales"
-SECTIONS = {"locale", "name", "rules", "ui", "verbs", "llm_prompts", "status"}
+SECTIONS = {"locale", "name", "rules", "ui", "llm_prompts", "status"}
 REQUIRED_UI = {"severity_high", "severity_medium", "severity_low",
-               "fallback_summary", "runs", "fetches", "writes", "edits"}
+               "ai_wrap"}
 
 
 def _raw(lang):
