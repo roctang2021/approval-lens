@@ -996,3 +996,15 @@ registry. Tier 2 flagging a Tier 1 over-claim is turning out to be a reliable
 signal worth mining rather than a curiosity.
 
 Version 0.21.0. 336 tests.
+
+**M23 confirmed live.** The same headless command now executes: it reaches
+`sudo`, which exits with "a password is required". The plugin is out of the
+decision and the allowlist governs again — previously the hook itself reported
+"It didn't execute".
+
+Incidental: the CLI's own explanation of the failure — "`sudo -n` runs
+non-interactively and refuses to prompt, so it exits rather than asking for
+your password" — is precisely the semantics Tier 2 keeps inverting ("runs
+without needing a password"). Independent confirmation that the M22 finding is
+a model error and not a misreading, and the sharpest available statement of
+what the right answer looks like. `sudo -n` stays the standing counter-example.
