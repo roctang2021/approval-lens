@@ -900,3 +900,56 @@ model. A prohibition has to name the behaviour to avoid, not the confidence
 level under which to avoid it.
 
 Version 0.18.0.
+
+## M23 (2026-08-14): the flag errors were the model, not the prompt
+
+`sudo -n` survived three rounds of prompt tightening — soft guidance, then an
+"unless you are certain" hedge, then a flat prohibition on explaining flags at
+all. The third round it named the flag anyway. So the prompt was measured
+against the alternative instead of tightened a fourth time.
+
+Same prompt, same command, two models, two runs each:
+
+| | `sudo -n rm ...` | median latency |
+|---|---|---|
+| `claude-haiku-4-5` | wrong 2/2 — "does not need a password" | 1.2s |
+| `claude-sonnet-5` | right 2/2 — "fails outright if there is no passwordless rule" | 2.5s |
+
+A capability limit, not a wording problem. Defaults changed to `claude-sonnet-5`
+with the deadline raised 3.0s → 5.0s: sonnet's slowest measured call was 3.5s,
+so the old deadline would have paid for calls whose answers never rendered.
+
+**The deadline is the dialog's latency** — the hook runs before the prompt
+appears, so this trade buys correctness with ~1.3s of extra wait on every
+Tier 2 call. Worth it: the reader is about to read the sentence carefully, and
+a confidently wrong one spends the trust the rule-verified half is there to
+earn. Owner made this call explicitly; haiku stays a one-line config change.
+
+Also fixed a test that pinned `timeout_seconds == 3.0` as a literal. The
+assertion is about the deadline being passed through to the request, not about
+its value, so it now reads DEFAULT_CONFIG.
+
+Version 0.20.0 (shipped together with M24).
+
+## M24 (2026-08-14): the notification channel is gone
+
+Owner: "把 mac 通知弹窗那个去掉吧,没啥用." Removed rather than left switched
+off. It was built in M6 for a real reason — back then `systemMessage` did not
+render, so a notification was the only way the explanation could reach a human.
+`PreToolUse` `"ask"` replaced that: the explanation now lands in the dialog the
+user is already looking at, which is strictly better placement. What the
+notification retained was the auto-allowed case (flagged calls that never show
+a dialog), and in practice that turned out not to be worth a second channel.
+
+Removed: the `notify` config block and its validation, `maybe_notify`,
+`send_desktop_notification`, `_osa_escape`, `session_label` and `_TITLE_KEYS`
+(only the notification path read session titles), `_SEVERITY_THRESHOLDS`, the
+`notify()` M4 localhost-panel stub that had been a no-op since it was written,
+tests/test_notify.py, and the README sections in both languages.
+
+`_scan_transcript` stays — `task_context` shares it. `notify_subject` was
+renamed `detail_subject`, which is what it had actually been since detail
+extraction landed.
+
+330 tests (down from 354; the 24 removed were all notification tests). An
+existing `notify` block in a user config is simply ignored.

@@ -120,12 +120,14 @@ def test_request_contains_only_command_and_static_prompt(monkeypatch):
     assert req.get_header("X-api-key") == "sk-test-not-a-real-key"
     assert req.get_header("Authorization") is None  # api key path: no bearer
     assert req.get_header("Anthropic-version") == pl.LLM_API_VERSION
-    assert timeout == pytest.approx(3.0)
+    # Read the default rather than pinning a literal: this assertion is about
+    # the deadline being PASSED THROUGH, not about what its value happens to be.
+    assert timeout == pytest.approx(pl.DEFAULT_CONFIG["llm"]["timeout_seconds"])
 
     body = json.loads(req.data.decode("utf-8"))
     # PRIVACY: exactly these four keys — no cwd, session_id, or transcript.
     assert set(body) == {"model", "max_tokens", "system", "messages"}
-    assert body["model"] == "claude-haiku-4-5"
+    assert body["model"] == pl.DEFAULT_CONFIG["llm"]["model"]
     assert body["messages"] == [{"role": "user", "content": COMMAND}]
     assert body["system"] == pl.ui_text(pl.load_locale("en"), "bash", section="llm_prompts")
 

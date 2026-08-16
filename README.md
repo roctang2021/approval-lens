@@ -52,13 +52,6 @@ Want 🟡 medium risks (force-push, `sudo`, recursive delete…) on the dialog
 too? Set `ask.min_severity: "medium"` — accepting that flagged-but-allowlisted
 calls will now prompt.
 
-There's also an **opt-in macOS notification channel** (`notify.enabled`). It's
-independent of the ask gate: it can also flag calls that auto-run without ever
-showing a dialog — useful as a "this just happened" heads-up. Notifications are
-titled with the **session name** (`🔴 HIGH · auth refactor`), so with several
-windows open you can tell at a glance which one it came from — the title comes
-from the session's own name, falling back to the project folder.
-
 ## How it works
 
 Two tiers. The first is always on; the second is optional and off by default.
@@ -66,7 +59,7 @@ Two tiers. The first is always on; the second is optional and off by default.
 | Tier | What | Cost | Network |
 | --- | --- | --- | --- |
 | **1 — static analyzer** | Bilingual rules match the pending action offline (shell command, URL, or file path) and produce the severity + plain-language sentence. | free | none |
-| **2 — LLM explainer** *(opt-in)* | One `claude-haiku-4-5` call appends an `AI:` line describing what *this* call does, using **your own** API credentials. It never rates the danger — severity stays with the rules. | your API usage | one HTTPS call, 3s hard timeout, SHA256-cached 7 days |
+| **2 — LLM explainer** *(opt-in)* | One `claude-sonnet-5` call appends an `AI:` line describing what *this* call does, using **your own** API credentials. It never rates the danger — severity stays with the rules. | your API usage | one HTTPS call, 5s hard timeout, SHA256-cached 7 days |
 
 Tier 2 **augments** Tier 1 — it never replaces it. If the model call is
 disabled, times out, errors, or you have no credentials, you still get the full
@@ -161,8 +154,8 @@ hook. Full example: [`config.example.json`](config.example.json).
   "max_message_chars": 500,
   "llm": {
     "enabled": false,
-    "model": "claude-haiku-4-5",
-    "timeout_seconds": 3.0,
+    "model": "claude-sonnet-5",
+    "timeout_seconds": 5.0,
     "api_key_env": "ANTHROPIC_API_KEY",
     "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
     "cache_ttl_days": 7
@@ -176,14 +169,12 @@ hook. Full example: [`config.example.json`](config.example.json).
 | `ask.min_severity` | `"low"` \| `"medium"` \| `"high"` | `"high"` | A rule match at/above this severity forces the dialog with the explanation on it; below it, the plugin prints `{}` and stays invisible. `"info"` is deliberately rejected — it would prompt on every tool call. |
 | `max_message_chars` | 80–9000 | 500 | Hard cap on the explanation length. |
 | `llm.enabled` | `true` \| `false` | `false` | Turns on Tier 2. Must be literal `true`. |
-| `llm.model` | model id | `"claude-haiku-4-5"` | Any Messages-API model. |
-| `llm.timeout_seconds` | 0.1–6.0 | 3.0 | Hard wall-clock deadline for the API call. |
+| `llm.model` | model id | `"claude-sonnet-5"` | Any Messages-API model. `claude-haiku-4-5` is ~2x faster and far cheaper, but got `sudo -n` wrong in every measured run — it reported "runs without needing a password" for a flag that means *fail* rather than prompt. |
+| `llm.timeout_seconds` | 0.1–6.0 | 5.0 | Hard wall-clock deadline for the API call. This is the dialog's latency — the hook runs before the prompt appears. Measured medians: sonnet 2.5s, haiku 1.2s. |
 | `llm.api_key_env` / `llm.auth_token_env` | env var name | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Where to read your credential (see below). |
 | `llm.cache_ttl_days` | 0–365 | 7 | Response cache TTL; `0` disables the cache. |
 | `llm.send_file_content` | `true` \| `false` | `false` | Whether Tier 2 may send Write/Edit file *contents* (not just the path) to the model. Off by default. |
 | `llm.send_task_context` | `true` \| `false` | `false` | Whether Tier 2 may send **your current request** so the model can say whether the operation fits what you asked for. Off by default — see [Task context](#task-context-opt-in). |
-| `notify.enabled` | `true` \| `false` | `false` | Fire a macOS notification for flagged calls — independent of the ask gate, so it also covers flagged calls that auto-run. |
-| `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | Only notify for matches at/above this severity. |
 
 ### Task context (opt-in)
 
@@ -216,8 +207,8 @@ Two things this deliberately does **not** do:
 Set `"lang"` to any code that has a file in [`hooks/locales/`](hooks/locales).
 Shipped today: **en** (base), **zh** (简体中文), **zh-Hant** (繁體中文),
 **ja** (日本語), **es** (Español), **fr** (Français). Everything the plugin
-says — dialog reasons, notifications, the Tier 2 model prompt, and
-`lens-status` — follows that setting.
+says — dialog reasons, the Tier 2 model prompt, and `lens-status` — follows
+that setting.
 
 **Adding a language is one file, no code.** Copy `locales/en.yaml`, translate
 the values (never the keys), and name it after the language code. `en.yaml` is
@@ -355,11 +346,6 @@ hook 挂在 `PreToolUse` 上。对被标记的调用,它返回 `permissionDecisi
 `ask.min_severity: "medium"`——代价是命中规则但本已被 allowlist 放行的调用,
 现在也会弹框。
 
-另有一条**可选的 macOS 通知通道**(`notify.enabled`),它和 ask 阈值互相独立:
-对自动放行、根本不弹框的被标记调用,它也能弹通知——当作"刚才发生了这件事"的提醒。
-通知标题会带上**会话名**(`🔴 高危 · 小工具困难排查`),同时开多个窗口时一眼就知道
-是哪个会话发来的——名字取自会话自身的标题,没有则回落到项目目录名。
-
 ## 工作原理
 
 两层。第一层永远开启;第二层可选,默认关闭。
@@ -367,7 +353,7 @@ hook 挂在 `PreToolUse` 上。对被标记的调用,它返回 `permissionDecisi
 | 层级 | 内容 | 费用 | 网络 |
 | --- | --- | --- | --- |
 | **Tier 1 — 静态分析** | 双语规则离线匹配待批操作(shell 命令 / URL / 文件路径),产出严重度 + 大白话解释句。 | 免费 | 无 |
-| **Tier 2 — 大模型解释**(需手动开启) | 一次 `claude-haiku-4-5` 调用,用**你自己的**凭据追加一行 `AI:`,说明**这一条**具体在做什么。它不评判危险程度——严重度始终归规则。 | 记你自己的 API 账户 | 一次 HTTPS 调用,3 秒硬超时,SHA256 缓存 7 天 |
+| **Tier 2 — 大模型解释**(需手动开启) | 一次 `claude-sonnet-5` 调用,用**你自己的**凭据追加一行 `AI:`,说明**这一条**具体在做什么。它不评判危险程度——严重度始终归规则。 | 记你自己的 API 账户 | 一次 HTTPS 调用,5 秒硬超时,SHA256 缓存 7 天 |
 
 Tier 2 是**追加**,绝不替代 Tier 1。模型调用未开启/超时/出错/没凭据时,你依然会看到
 完整的 Tier 1 解释。模型**只看到最小主体**——shell 命令、URL 或文件路径(Write/Edit 的
@@ -457,14 +443,12 @@ claude --plugin-dir /path/to/permission-lens
 | `ask.min_severity` | `"low"` \| `"medium"` \| `"high"` | `"high"` | 命中该级别及以上的规则时,强制弹框并把解释印在弹框上;低于该级别时输出 `{}`、完全隐身。`"info"` 被有意拒绝——那会让每一次工具调用都弹框。 |
 | `max_message_chars` | 80–9000 | 500 | 解释长度硬上限。 |
 | `llm.enabled` | `true` \| `false` | `false` | 开启 Tier 2。必须是字面量 `true`。 |
-| `llm.model` | 模型 id | `"claude-haiku-4-5"` | 任意 Messages API 模型。 |
-| `llm.timeout_seconds` | 0.1–6.0 | 3.0 | API 调用的墙钟硬超时。 |
+| `llm.model` | 模型 id | `"claude-sonnet-5"` | 任意 Messages API 模型。`claude-haiku-4-5` 快约一倍、便宜得多,但实测每次都把 `sudo -n` 讲错——说成"不需要输入密码就执行",而这个开关的含义是需要密码时*直接失败*。 |
+| `llm.timeout_seconds` | 0.1–6.0 | 5.0 | API 调用的墙钟硬超时。这个值就是弹框的延迟——hook 在弹框之前跑。实测中位:sonnet 2.5s,haiku 1.2s。 |
 | `llm.api_key_env` / `llm.auth_token_env` | 环境变量名 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | 从哪里读你的凭据(见下)。 |
 | `llm.cache_ttl_days` | 0–365 | 7 | 响应缓存 TTL;`0` 关闭缓存。 |
 | `llm.send_file_content` | `true` \| `false` | `false` | Tier 2 是否发送 Write/Edit 的文件**内容**(而非只发路径)。默认关闭。 |
 | `llm.send_task_context` | `true` \| `false` | `false` | Tier 2 是否发送**你当前的请求**,让模型判断这次操作是否符合你要做的事。默认关闭——见 [任务上下文](#任务上下文需手动开启)。 |
-| `notify.enabled` | `true` \| `false` | `false` | 对被标记的调用弹 macOS 通知——与 ask 阈值互相独立,自动放行的被标记调用也会通知。 |
-| `notify.min_severity` | `"info"` \| `"low"` \| `"medium"` \| `"high"` | `"high"` | 只对该级别及以上的命中弹通知。 |
 
 ### 任务上下文(需手动开启)
 
@@ -491,7 +475,7 @@ claude --plugin-dir /path/to/permission-lens
 把 `"lang"` 设成 [`hooks/locales/`](hooks/locales) 里任意一个有文件的语言代码。
 目前自带:**en**(基准)、**zh**(简体中文)、**zh-Hant**(繁體中文)、
 **ja**(日本語)、**es**(Español)、**fr**(Français)。插件说的每一句话——弹框
-理由、通知、Tier 2 的模型提示词、`lens-status` 输出——都跟随这个设置。
+理由、Tier 2 的模型提示词、`lens-status` 输出——都跟随这个设置。
 
 **加一门语言只需加一个文件,不用改代码。** 复制 `locales/en.yaml`,翻译值(不要动
 键名),按语言代码命名即可。`en.yaml` 是基准:你没写或留空的键会自动回落英文,所以

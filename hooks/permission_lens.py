@@ -163,8 +163,18 @@ DEFAULT_CONFIG = {
     "max_message_chars": MAX_MESSAGE_CHARS,
     "llm": {
         "enabled": False,                # Tier 2 is strictly opt-in
-        "model": "claude-haiku-4-5",
-        "timeout_seconds": 3.0,          # hard wall-clock deadline for the API call
+        # Measured 2026-08-14 on `sudo -n rm ...`: haiku-4-5 got the flag wrong
+        # twice out of two ("runs without needing a password"), sonnet-5 right
+        # twice out of two ("fails outright if there is no passwordless rule").
+        # Three rounds of prompt tightening did not move haiku, so this is a
+        # capability limit, not a wording problem. A confidently wrong sentence
+        # spends the trust the verified half of the line is there to earn.
+        "model": "claude-sonnet-5",
+        # This deadline IS the dialog's latency — the hook runs before the
+        # prompt appears. Measured medians: haiku 1.2s, sonnet 2.5s, sonnet
+        # slowest 3.5s. At the old 3.0s sonnet would have missed the deadline
+        # routinely, paying for a call whose answer never rendered.
+        "timeout_seconds": 5.0,          # hard wall-clock deadline for the API call
         # Credential resolution order: api_key_env (x-api-key header), then
         # auth_token_env (OAuth bearer, e.g. from `ant auth print-credentials`),
         # then the *_file paths below.
@@ -190,16 +200,8 @@ DEFAULT_CONFIG = {
         # offline rules and are never influenced by it.
         "send_task_context": False,
     },
-    # Desktop notification channel (opt-in). Independent of the ask gate: it
-    # fires for any flagged call at/above its own min_severity — including
-    # calls the permission rules auto-allow, where it's the only signal.
-    "notify": {
-        "enabled": False,
-        "min_severity": "high",  # info | low | medium | high
-    },
 }
 
-_SEVERITY_THRESHOLDS = ("info", "low", "medium", "high")
 _ASK_THRESHOLDS = ("low", "medium", "high")  # no "info": would ask on everything
 # max_message_chars bounds: floor keeps at least a headline visible; ceiling stays
 # under the 10,000-char hook output cap (NOTES.md, "Confirmed facts" item 3).
@@ -253,12 +255,6 @@ def _validate_config(raw):
             llm_raw.get("cache_ttl_days"), llm["cache_ttl_days"], 0, 365)
         llm["send_file_content"] = llm_raw.get("send_file_content") is True
         llm["send_task_context"] = llm_raw.get("send_task_context") is True
-    notify_raw = raw.get("notify")
-    if isinstance(notify_raw, dict):
-        n = cfg["notify"]
-        n["enabled"] = notify_raw.get("enabled") is True
-        if notify_raw.get("min_severity") in _SEVERITY_THRESHOLDS:
-            n["min_severity"] = notify_raw["min_severity"]
     return cfg
 
 
@@ -835,10 +831,11 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
 
 
 def passes_threshold(matches, min_severity):
-    """Severity gate shared by ask.min_severity and notify.min_severity:
-    'info' passes everything (incl. no-match calls); higher values require a
-    rule match at/above that level. ask never accepts 'info', so the ask gate
-    can only fire on an actual match."""
+    """The ask.min_severity gate: a rule match at/above `min_severity` passes.
+
+    'info' passes everything including no-match calls; ask never accepts it, so
+    the gate can only fire on an actual match. The branch is kept because
+    SEVERITY_ORDER has no entry for 'info' and unknown values must not pass."""
     threshold = SEVERITY_ORDER.get(min_severity, 0)  # "info" and unknown -> 0
     if not matches:
         return threshold <= 0
@@ -1116,11 +1113,6 @@ def _cache_store(path, text):
 # failure is swallowed, so fail-open / exit-0 / single-JSON are all preserved.
 
 
-# Session label for notifications: which window is this? Titles live in the
-# transcript as appended `custom-title` (user-set, authoritative) / `ai-title`
-# (auto) lines — verified 2026-07-19 against a real transcript. Only read on
-# the notification path (rare, and already paying for an osascript subprocess).
-_TITLE_KEYS = (("custom-title", "customTitle"), ("ai-title", "aiTitle"))
 _TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024  # cap the scan on very long sessions
 # The transcript also records the developer's current request as its own line
 # (verified 2026-07-19). Used ONLY when llm.send_task_context is on.
@@ -1165,78 +1157,6 @@ def task_context(event, max_chars=TASK_CONTEXT_MAX_CHARS):
     text = _scan_transcript(path, (_TASK_KEY,)).get(_TASK_KEY[0], "")
     text = _one_line(text)
     return text[:max_chars - 1] + "…" if len(text) > max_chars else text
-
-
-def session_label(event):
-    """Short human name for the session: its title, else the project folder."""
-    try:
-        found = {}
-        path = event.get("transcript_path")
-        if isinstance(path, str) and path:
-            # _scan_transcript swallows its own errors, so an unreadable
-            # transcript still falls through to the folder-name fallback.
-            found = _scan_transcript(path, _TITLE_KEYS)
-        # A user-set title wins over the generated one, whichever came last.
-        for kind, _ in _TITLE_KEYS:
-            if found.get(kind):
-                return _one_line(found[kind])[:60]
-        cwd = event.get("cwd")
-        if isinstance(cwd, str) and cwd.strip():
-            return os.path.basename(cwd.rstrip("/")) or None
-    except Exception:
-        if os.environ.get("PERMISSION_LENS_DEBUG"):
-            _log_debug("session_label: " + traceback.format_exc())
-    return None
-
-
-def maybe_notify(tool, matches, neutral, config, lang, event=None):
-    try:
-        n = config.get("notify")
-        if not isinstance(n, dict) or not n.get("enabled"):
-            return
-        # "info" notifies on everything (incl. no-match neutral calls); higher
-        # values require a rule match at/above that level. passes_threshold
-        # handles the no-match case (threshold <= 0).
-        if not passes_threshold(matches, n.get("min_severity", "high")):
-            return
-        # Resolved only past the gates — reading the transcript isn't free.
-        session = session_label(event) if event else None
-        # The session name goes in the TITLE, the most-scanned line: with
-        # several windows running, "which one is asking me?" is the first
-        # question a notification has to answer (the M6 pairing weakness).
-        if matches:
-            locale = load_locale(lang)
-            top = matches[0]
-            emoji = SEVERITY_EMOJI.get(top["severity"], INFO_EMOJI)
-            head = f"{emoji} {severity_label(locale, top['severity'])}"
-            detail = rule_text(locale, top["id"], "explanation")
-        else:  # only reached at min_severity "info" — benign/neutral call
-            head, detail = INFO_EMOJI, neutral
-        send_desktop_notification(
-            f"{head} · {session}" if session else head,
-            f"{tool} · {detail}",
-        )
-    except Exception:
-        if os.environ.get("PERMISSION_LENS_DEBUG"):
-            _log_debug("notify: " + traceback.format_exc())
-
-
-def send_desktop_notification(title, body):
-    """Fire a macOS notification (no-op off darwin). Best-effort, short timeout."""
-    if sys.platform != "darwin":
-        return
-    import subprocess  # lazy: keep Tier 1 startup lean
-    script = 'display notification "%s" with title "%s"' % (
-        _osa_escape(body), _osa_escape(title))
-    subprocess.run(
-        ["osascript", "-e", script],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
-    )
-
-
-def _osa_escape(text):
-    # AppleScript string literal escaping; also flatten newlines to one line.
-    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
 # ── heartbeat ─────────────────────────────────────────────────────────────────
@@ -1328,21 +1248,10 @@ def _nonneg_int(value):
     return value
 
 
-# ── M4 extension point (localhost panel — no-op today) ────────────────────────
-
-def notify(payload):
-    """Stub for the future companion localhost panel (milestone M4).
-
-    A later `notify_url` config key will POST the pending request here so a web
-    page can render a richer breakdown. Intentionally does nothing today.
-    """
-    return None
-
-
 # ── per-tool analyzers ────────────────────────────────────────────────────────
 #
 # Each analyzer maps one tool's tool_input to a common Analysis:
-#   (matches, neutral_summary, tier2_subject, tier2_kind, notify_subject)
+#   (matches, neutral_summary, tier2_subject, tier2_kind, detail_subject)
 # or None to stay silent (unknown/empty input → native dialog, no annotation).
 # tool_input field names verified from real transcripts (NOTES.md, item 1).
 
@@ -1421,11 +1330,7 @@ def build_message(event, config=None):
     result = analyzer(event.get("tool_input") or {}, config, config["lang"])
     if result is None:
         return None
-    matches, neutral, subject, kind, notify_subject = result
-    notify({"subject": notify_subject, "matches": [m["id"] for m in matches]})
-    # Notification channel is independent of the ask gate (its own threshold),
-    # so it runs first — it can flag calls that will auto-run without a dialog.
-    maybe_notify(tool_name, matches, neutral, config, config["lang"], event)
+    matches, neutral, subject, kind, detail_subject = result
     asked = passes_threshold(matches, config["ask"]["min_severity"])
     # Tier 2 runs only for calls we're actually going to put on a dialog.
     llm_text = None
@@ -1438,14 +1343,14 @@ def build_message(event, config=None):
     record_heartbeat(tool_name, matches, asked)
     if not asked:
         return None
-    # notify_subject is the small, clean subject (command / URL / path) — never
+    # detail_subject is the small, clean subject (command / URL / path) — never
     # file contents, so the detail can't leak a file body onto the dialog.
     return render_reason(
         matches,
         lang=config["lang"],
         max_chars=config["max_message_chars"],
         llm_text=llm_text,
-        detail=extract_detail(matches[0], None, notify_subject),
+        detail=extract_detail(matches[0], None, detail_subject),
     )
 
 
