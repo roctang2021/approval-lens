@@ -839,3 +839,30 @@ the heartbeat counters (open), and now the Tier 2 cache. A cached or stale
 value presented without saying it is cached is worse than no value.
 
 Version 0.17.0. 354 tests.
+
+## M21b (2026-08-14): "installed" and "running" are different questions
+
+The M21 cache fix appeared not to work either — the same four cases came back
+byte-identical a second time. Cause: `claude plugin update` writes each build
+to its own version-named directory under
+`~/.claude/plugins/cache/<marketplace>/permission-lens/<version>/`, and three
+versions were sitting there at once (0.15.1, 0.16.0, 0.17.0). A session binds
+to one of them, so publishing without restarting leaves the OLD build handling
+every call. The owner's test session was still on 0.15.1: old prompt AND old
+cache key, hence a cache hit and identical text.
+
+Nothing on screen said so. `lens-status` compared repo vs running, which is the
+right pair for "did I forget to publish" but not for "did I forget to restart" —
+in that case the repo is current, the publish succeeded, and the only
+discrepancy is invisible.
+
+`lens-status` now also lists the versions present in the plugin cache and warns
+when the newest is not the one that handled the last call. Running it right
+after this landed printed exactly the missing sentence, and `Tier 2:命中缓存`
+next to it independently confirmed the cache-hit path.
+
+Fourth instance of one shape: a value that is stale but presented as current.
+The rule this project keeps re-learning is to make the stale case SAY it is
+stale, rather than to make it rarer.
+
+Version 0.17.1.

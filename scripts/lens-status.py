@@ -56,6 +56,31 @@ def _version():
         return "?"
 
 
+def _installed_versions():
+    """Versions sitting in the plugin cache, newest last.
+
+    `claude plugin update` writes each build to its own version-named directory
+    and several coexist. A session binds to one of them, so "installed" and
+    "running" are different questions — publishing without restarting leaves the
+    old build handling every call, with nothing on screen saying so.
+    """
+    root = Path.home() / ".claude" / "plugins" / "cache"
+    found = set()
+    try:
+        for manifest in root.glob("*/permission-lens/*/.claude-plugin/plugin.json"):
+            try:
+                v = json.loads(manifest.read_text(encoding="utf-8")).get("version")
+            except Exception:
+                continue
+            if isinstance(v, str) and v:
+                found.add(v)
+    except Exception:
+        return []
+    def key(v):
+        return [int(p) if p.isdigit() else -1 for p in v.split(".")]
+    return sorted(found, key=key)
+
+
 def _age(locale, seconds):
     for key, size in (("s", 90), ("m", 90 * 60), ("h", 36 * 3600)):
         if seconds < size:
@@ -78,11 +103,19 @@ def main():
     # Reporting only the former is how "I fixed that already" turns into an
     # hour of confusion.
     repo, running = _version(), str(hb.get("running") or "")
+    installed = _installed_versions()
+    newest = installed[-1] if installed else ""
     if running and running != repo:
         print(f"Permission Lens {running}（正在运行）· 仓库是 {repo} —— "
               f"重启 Claude 后新版才生效")
     else:
         print(f"Permission Lens {repo}")
+    # The trap this catches: publish succeeded, so the newest build is on disk
+    # and the repo looks current, yet every call is still handled by whatever
+    # version the session bound to at startup.
+    if newest and running and newest != running:
+        print(f"⚠️  已安装 {'、'.join(installed)}，但最近一次调用由 {running} 处理"
+              f" —— 重启 Claude Code 才会切到 {newest}")
     last = hb.get("last")
     if not isinstance(last, dict) or not isinstance(last.get("ts"), (int, float)):
         print(_text(locale, "empty").format(path=hb_path))
