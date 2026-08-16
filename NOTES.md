@@ -866,3 +866,37 @@ The rule this project keeps re-learning is to make the stale case SAY it is
 stale, rather than to make it rarer.
 
 Version 0.17.1.
+
+## M22 (2026-08-14): the prompt fix, actually measured
+
+Rerun of the four cases on 0.17.1, with a restart, so the new prompt and the
+prompt-keyed cache were both live. Three distinct outcomes:
+
+- **#2 `shred -u -z` — fixed.** Old: "`-u` controls how many times it
+  overwrites" (false). New: "securely deletes the file — overwrites the
+  contents several times, fills with zeros, then removes the file itself."
+  It stopped naming flags and described the resulting behaviour, which is both
+  correct and more useful. That is exactly the shape the prompt now asks for.
+- **#17 `git -C .../norepo reset --hard` — fixed.** It now says the path does
+  not look like a real repository ("`norepo` suggests it does not exist") and
+  the command will probably fail outright. The "say so when the target
+  evidently does not exist" clause did the work.
+- **#14 `sudo -n rm` — STILL WRONG.** Still "runs without needing to type a
+  password". The wording shifted slightly, proving a fresh call rather than a
+  cache hit, so the model simply believes this. The prompt said not to explain
+  a flag "unless you are certain" — useless guidance, because the model is
+  always certain. Tightened to a flat prohibition: never explain what a flag
+  means, describe the resulting behaviour instead. `-n` remains the standing
+  counter-example to watch.
+- **#22 `aws s3 rm` — no AI note at all.** `lens-status` reported
+  `Tier 2:无回复(超时或 API 出错)`. This is the fail-open path working: Tier 2
+  missed its 3s deadline, and the dialog still rendered with the full Tier 1
+  explanation. Worth stating plainly because it looks like a regression on
+  screen and is not one — though it is the first observed timeout in normal
+  use, so the deadline is worth watching.
+
+Lesson beyond this project: "unless you are certain" is not a constraint on a
+model. A prohibition has to name the behaviour to avoid, not the confidence
+level under which to avoid it.
+
+Version 0.18.0.
