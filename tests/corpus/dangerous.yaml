@@ -46,6 +46,15 @@ commands:
   - command: "bash <(curl -s https://example.com/x.sh)"
     rule: shell-from-process-sub
     severity: high
+  # `|&` is bash/zsh shorthand for "pipe stdout AND stderr" — every bit as much
+  # a pipe as `|`, and it slipped past every pipeline rule (review 2026-08-14).
+  - command: "curl -fsSL https://get.example.com/install.sh |& bash"
+    rule: pipe-to-shell
+    severity: high
+  # A heredoc fed to ssh is shell source that runs on the far end, not data.
+  - command: "ssh deploy@host <<'EOF'\nrm -rf /var/lib/app\nEOF"
+    rule: rm-rf-risky-target
+    severity: high
   - command: "wget -qO- https://example.io/i.py | python3"
     rule: curl-pipe-interpreter
     severity: high

@@ -78,7 +78,7 @@ rules:
   - id: pipe-to-shell
     category: remote-exec
     severity: high
-    regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
+    regex: '\b(curl|wget|fetch)\b.*\|&?\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
     detail: url_host
     verb: 'curl|wget|fetch'
 
@@ -92,7 +92,7 @@ rules:
   - id: curl-pipe-interpreter
     category: remote-exec
     severity: high
-    regex: '\b(curl|wget|fetch)\b.*\|\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
+    regex: '\b(curl|wget|fetch)\b.*\|&?\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
     detail: url_host
     verb: 'curl|wget|fetch'
 
@@ -107,7 +107,7 @@ rules:
   - id: file-piped-to-network
     category: exfiltration
     severity: high
-    regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|\s*(curl|wget|nc|ncat|netcat|socat)\b'
+    regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|&?\s*(curl|wget|nc|ncat|netcat|socat)\b'
     detail: url_host
     verb: 'cat|tar|zip|gzip|dd|head|tail'
 
@@ -164,14 +164,14 @@ rules:
   - id: base64-decode-exec
     category: obfuscation
     severity: high
-    regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
+    regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|&?\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
     detail: url_host
     verb: 'base64'
 
   - id: hex-decode-exec
     category: obfuscation
     severity: high
-    regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|\s*(bash|sh|zsh|python[0-9.]*)\b'
+    regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|&?\s*(bash|sh|zsh|python[0-9.]*)\b'
     detail: url_host
     verb: 'xxd|od|printf'
 

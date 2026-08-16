@@ -1039,3 +1039,28 @@ is the failure mode every doc-derived test has, and asserting on the row count
 is the cheapest defense.
 
 Version 0.22.0. 374 tests + 74 checklist cases.
+
+## M25 (2026-08-14): review round — two analyzer bypasses
+
+An independent read of the whole file (fresh model, full source) turned up two
+holes that every existing test missed, both verified against the analyzer before
+being called bugs.
+
+- **`|&` was not treated as a pipe.** `curl … |& bash` matched NOTHING, while
+  `curl … | bash` and `curl … 2>&1 | bash` both fired. Five pipeline rules
+  hard-coded `\|\s*`; `|&` is bash/zsh shorthand for piping stdout and stderr
+  together and is exactly as dangerous. One character stood between the
+  headline rule of the whole project and silence.
+- **A heredoc fed to `ssh` was dropped as data.** M16 stops treating heredoc
+  bodies as shell, which is right for `cat >> NOTES.md <<EOF` — but an
+  `ssh host <<EOF` body IS shell source; it just runs on the far end. So
+  `ssh deploy@host <<'EOF' … rm -rf /var/lib/app … EOF` analyzed as nothing at
+  all. `ssh` joins _SHELL_INTERPRETERS; a regression test pins the M16
+  guarantee so the fix cannot walk it back.
+
+Both are the same shape as the false positives fixed earlier: the analyzer's
+model of "what is code" versus "what is text" was subtly wrong. The earlier
+round erred toward treating text as code; this one erred toward treating code
+as text.
+
+Version 0.23.0. 418 tests.

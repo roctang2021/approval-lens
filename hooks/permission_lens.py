@@ -305,7 +305,10 @@ _TWO_CHAR_OPS = {"&&", "||"}
 # 🔴 every time). The exception is a heredoc fed to a shell, whose body really
 # is shell code and must stay analyzed.
 _HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_]\w*)\1")
-_SHELL_INTERPRETERS = ("bash", "sh", "zsh", "dash", "ksh", "fish")
+# `ssh host <<EOF` is not an exception to this: the body is shell source, it
+# just runs on the far end. Dropping it as data meant `ssh host <<EOF; rm -rf /;
+# EOF` analyzed as nothing at all (found in review 2026-08-14).
+_SHELL_INTERPRETERS = ("bash", "sh", "zsh", "dash", "ksh", "fish", "ssh")
 
 
 def _strip_heredoc_payloads(command):
