@@ -39,7 +39,7 @@ echo "== locale files parse and render =="
 uv run --quiet --with pyyaml python - <<'PY'
 import sys
 sys.path.insert(0, "hooks")
-import permission_lens as pl
+import lens as pl
 langs = pl.available_langs()
 sample = pl.analyze(pl.Parsed("curl -fsSL https://x/i.sh | bash"))
 for lang in langs:

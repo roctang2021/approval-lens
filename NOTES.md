@@ -1174,3 +1174,38 @@ as "runs without needing a password". README now carries a threat model saying
 so, along with the three-interception-layer finding and the headless behavior.
 
 Version 0.26.0. 460 tests.
+
+## M29 (2026-08-14): Phase 1 — one file becomes an engine and an adapter
+
+The 1568-line module is now `hooks/lens/` (13 modules, none over 300 lines) plus
+a 114-line `hooks/permission_lens.py` that is nothing but the Claude Code
+adapter: stdin shape, `hookSpecificOutput` protocol, `claude_surface()`.
+Everything else knows nothing about Claude Code.
+
+The split was mechanical on purpose — code moved, behaviour did not — and was
+done by cutting on the section banners the file already had, asserting that the
+concatenated chunks reproduced the original byte for byte before any of them
+moved. What the move surfaced was worth having:
+
+- **Three modules had missing imports** that no test caught, because the code
+  that needed them sits inside a `try/except Exception` that swallows
+  everything. `heartbeat.py` had no `os`, so `record_heartbeat` failed silently
+  and wrote nothing — the exact "best-effort side effect that quietly stops
+  working" this project has been bitten by twice. Found with a static
+  used-minus-defined pass over every module, not by running tests.
+- **Four tests were patching the wrong object.** `monkeypatch.setattr(pl, ...)`
+  worked when everything lived in one namespace; with the engine split, a
+  patched re-export leaves the real reference untouched. Patching at the
+  DEFINING module is now the rule, and those tests were verifiably exercising
+  the code again (they fail without the fix).
+- Path resolution moved into `lens/paths.py`, because `Path(__file__)` in a
+  submodule points one directory deeper than the data files. Getting that wrong
+  in one place is cheaper than in six.
+
+`lens/__init__.py` names the supported surface; submodules stay importable for
+tests that legitimately need internals. `permission_lens.py` no longer
+re-exports anything — a second host adds `adapters/<host>.py`, not a second
+engine.
+
+Version 0.27.0. 460 tests, and `check.sh` still exercises the real
+`uv run hooks/permission_lens.py` subprocess path end to end.

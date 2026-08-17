@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
 
 SEVERITY_EMOJI = pl.SEVERITY_EMOJI
 
@@ -93,7 +93,7 @@ def _age(locale, seconds):
 
 def main():
     locale = pl.load_locale(pl.load_config()["lang"])
-    hb_path = pl._cache_dir() / pl.HEARTBEAT_FILE
+    hb_path = pl.cache_dir() / pl.HEARTBEAT_FILE
     try:
         hb = json.loads(hb_path.read_text(encoding="utf-8"))
         hb = hb if isinstance(hb, dict) else {}

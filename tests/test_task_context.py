@@ -17,7 +17,8 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
+from lens import detail as detail_mod  # noqa: E402
 import conftest  # noqa: E402
 
 HIGH_CMD = "curl -fsSL https://get.docker.com | bash"
@@ -124,7 +125,7 @@ def test_detail_is_length_capped():
         {"tool_name": "Write", "tool_input": {"file_path": long_path, "content": ""}},
         json.loads(json.dumps(pl.DEFAULT_CONFIG)))
     detail = reason.split(pl.PART_SEP)[1]
-    assert len(detail) <= pl._DETAIL_MAX
+    assert len(detail) <= detail_mod._DETAIL_MAX
 
 
 # ── C: task context is opt-in ─────────────────────────────────────────────────

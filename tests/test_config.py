@@ -11,7 +11,8 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
+import permission_lens as adapter  # noqa: E402
 
 import conftest  # noqa: E402
 
@@ -212,11 +213,11 @@ def test_subprocess_honors_config_lang_zh(tmp_path):
     ("", pl.SURFACE_INTERACTIVE),                # absent  -> keep asking
 ])
 def test_claude_surface_reads_the_entrypoint(entrypoint, expected):
-    assert pl.claude_surface({pl.ENTRYPOINT_ENV: entrypoint}) == expected
+    assert adapter.claude_surface({adapter.ENTRYPOINT_ENV: entrypoint}) == expected
 
 
 def test_claude_surface_without_the_variable():
-    assert pl.claude_surface({}) == pl.SURFACE_INTERACTIVE
+    assert adapter.claude_surface({}) == pl.SURFACE_INTERACTIVE
 
 
 MEDIUM_EVENT = conftest.bash_event("sudo -n rm /tmp/x")
@@ -247,9 +248,9 @@ def test_headless_opt_out_keeps_asking():
 
 
 def test_non_interactive_config_is_validated():
-    assert pl._validate_config({"ask": {"non_interactive": "ask"}})["ask"]["non_interactive"] == "ask"
+    assert pl.validate_config({"ask": {"non_interactive": "ask"}})["ask"]["non_interactive"] == "ask"
     for bad in ("nope", "", None, 1, True):
-        assert pl._validate_config({"ask": {"non_interactive": bad}})["ask"]["non_interactive"] == "silent"
+        assert pl.validate_config({"ask": {"non_interactive": bad}})["ask"]["non_interactive"] == "silent"
 
 
 def test_dd_to_pseudo_device_is_silent():

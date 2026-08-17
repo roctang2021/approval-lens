@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "hooks"))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
 
 DOC = ROOT / "scripts" / "manual-test-cases.md"
 EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}

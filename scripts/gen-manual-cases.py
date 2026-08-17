@@ -4,7 +4,7 @@ every stated expectation against the analyzer so the doc cannot drift."""
 import sys, yaml, json, pathlib
 REPO = pathlib.Path("/Users/roctang/Code/oss/permission-lens")
 sys.path.insert(0, str(REPO / "hooks"))
-import permission_lens as pl
+import lens as pl
 
 LANG = "zh"
 loc = pl.load_locale(LANG)

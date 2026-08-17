@@ -12,7 +12,7 @@ CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 # Make hooks/permission_lens.py importable as `permission_lens`.
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
 
 
 def config(**raw):
@@ -23,7 +23,7 @@ def config(**raw):
     key the module then required. _validate_config is the single constructor,
     so tests exercise exactly the shape production sees.
     """
-    return pl._validate_config(raw)
+    return pl.validate_config(raw)
 
 
 def llm_config(**overrides):

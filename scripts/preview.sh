@@ -28,7 +28,7 @@ if [ "${1:-}" = "--all" ]; then
   exec uv run --quiet --with pyyaml python - <<'PY'
 import sys, yaml
 sys.path.insert(0, "hooks")
-import permission_lens as pl
+import lens as pl
 LANG = (pl.load_config() or {}).get("lang", "en")
 gate = pl.load_config()["ask"]["min_severity"]
 cases = yaml.safe_load(open("tests/corpus/dangerous.yaml"))["commands"]

@@ -15,7 +15,8 @@ import yaml
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
+from lens import locales  # noqa: E402
 
 LOCALES_DIR = HOOKS_DIR / "locales"
 SECTIONS = {"locale", "name", "rules", "ui", "llm_prompts", "llm_guard", "status"}
@@ -125,8 +126,8 @@ def test_missing_and_blank_keys_fall_back_per_key(monkeypatch, tmp_path):
         "rules": {"sudo": {"risk": "XX risk"}},   # explanation missing
         "ui": {"severity_medium": "   "},          # blank -> must not win
     }), encoding="utf-8")
-    monkeypatch.setattr(pl, "LOCALES_DIR", partial)
-    monkeypatch.setattr(pl, "_LOCALE_CACHE", {})
+    monkeypatch.setattr(locales, "LOCALES_DIR", partial)
+    monkeypatch.setattr(locales, "_LOCALE_CACHE", {})
 
     locale = pl.load_locale("xx")
     assert pl.rule_text(locale, "sudo", "risk") == "XX risk"      # translated
@@ -136,8 +137,8 @@ def test_missing_and_blank_keys_fall_back_per_key(monkeypatch, tmp_path):
 
 
 def test_missing_locale_dir_degrades_to_empty_not_crash(monkeypatch, tmp_path):
-    monkeypatch.setattr(pl, "LOCALES_DIR", tmp_path / "nope")
-    monkeypatch.setattr(pl, "_LOCALE_CACHE", {})
+    monkeypatch.setattr(locales, "LOCALES_DIR", tmp_path / "nope")
+    monkeypatch.setattr(locales, "_LOCALE_CACHE", {})
     assert pl.load_locale("en") == {}
     assert pl.available_langs() == (pl.BASE_LANG,)
     # Text lookups still return safe defaults rather than raising.
@@ -189,7 +190,7 @@ def test_broken_ai_wrap_falls_back_instead_of_dropping_the_model_text(monkeypatc
     # the whole model sentence.
     broken = dict(pl.load_locale("en"))
     broken["ui"] = dict(broken["ui"], ai_wrap=" (AI note: )")
-    monkeypatch.setattr(pl, "_LOCALE_CACHE", {"xx": broken})
+    monkeypatch.setattr(locales, "_LOCALE_CACHE", {"xx": broken})
     reason = pl.render_reason(pl.analyze(pl.Parsed("rm -rf $X/*")), lang="xx",
                               llm_text="MODEL TEXT")
     assert "MODEL TEXT" in reason

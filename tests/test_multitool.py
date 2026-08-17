@@ -13,7 +13,7 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
 
 import conftest  # noqa: E402
 

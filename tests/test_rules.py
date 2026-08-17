@@ -9,7 +9,8 @@ HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import permission_lens as pl  # noqa: E402
+import lens as pl  # noqa: E402
+from lens import rules  # noqa: E402
 
 
 def _corpus(name):
@@ -153,10 +154,10 @@ def test_verb_guard_does_not_break_real_invocations(command, rule):
 
 def test_wrapper_stages_are_scanned_in_full():
     # A wrapper's own name says nothing, so every token of that stage counts.
-    assert pl._command_names(pl.SimpleCommand("sudo curl -fsSL x")) == \
+    assert rules._command_names(pl.SimpleCommand("sudo curl -fsSL x")) == \
         ["sudo", "curl", "-fsSL", "x"]
     # A plain stage contributes only its verb — `mkfs` here is an argument.
-    assert pl._command_names(pl.SimpleCommand("echo mkfs")) == ["echo"]
+    assert rules._command_names(pl.SimpleCommand("echo mkfs")) == ["echo"]
 
 
 def test_every_verb_pattern_is_anchored_by_construction():
