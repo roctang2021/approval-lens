@@ -34,7 +34,7 @@ gate = pl.load_config()["ask"]["min_severity"]
 cases = yaml.safe_load(open("tests/corpus/dangerous.yaml"))["commands"]
 shown = {"high": [], "other": []}
 for e in cases:
-    hits = pl.analyze(pl.Parsed(e["command"]))
+    hits = pl.analyze_command(pl.Parsed(e["command"]))
     if not hits:
         continue
     sev = hits[0]["severity"]

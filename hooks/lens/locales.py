@@ -3,6 +3,8 @@
 `en` is the base: every other locale is merged over it per key, so a partial or
 blank translation degrades string by string instead of breaking. Adding a
 language is adding one file, no code."""
+import traceback
+from .util import log_debug
 from .paths import LOCALES_DIR
 
 try:
@@ -44,8 +46,11 @@ def _read_locale(lang):
         with open(LOCALES_DIR / f"{lang}.yaml", "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}  # a language with no file at all is normal, not an error
     except Exception:
-        return {}  # missing/broken locale -> base language only
+        log_debug("locale %s unreadable: %s" % (lang, traceback.format_exc()))
+        return {}  # broken locale -> base language only
 
 
 def _merge_locale(base, over):

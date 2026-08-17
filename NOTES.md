@@ -1209,3 +1209,27 @@ engine.
 
 Version 0.27.0. 460 tests, and `check.sh` still exercises the real
 `uv run hooks/permission_lens.py` subprocess path end to end.
+
+## M30 (2026-08-14): the last of the review list
+
+- `Parsed.first_stage` deleted — no caller anywhere.
+- `analyze` renamed `analyze_command`. It only ever handled Bash; the other
+  three tools go through `match_string_rules`, and the bare name read as if it
+  covered all four.
+- **Every swallowed exception now leaves a trace.** `log_debug` gates on the
+  env var internally, so adding one costs a line. The genuinely expected cases
+  (no config file, no locale file, a cache miss) are caught as
+  `FileNotFoundError` and stay quiet, so the log means something when it has an
+  entry. Verified end to end: a malformed config now writes
+  `config /tmp/bad.json unusable: ...` and still prints `{}` and exits 0.
+  This was not hypothetical — Phase 1 found `heartbeat.py` failing silently
+  because of a missing import, and the 159→2 counter mystery from M21 remains
+  unexplained precisely because that path left nothing behind.
+- CONTRIBUTING.md written. The parts worth having are not the mechanics but the
+  rules the project learned the hard way: the five invariants, "prefer the
+  structural vocabulary over a cleverer regex" (every trick removed here was a
+  structural question in disguise), "copy must be true of the specific call, not
+  just the category", "probe a new host and write down what you measured", and
+  "probes must be harmless even if APPROVED — not because you will click Deny".
+
+Version 0.28.0. 460 tests.

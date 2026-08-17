@@ -347,7 +347,8 @@ or path) and nothing else, over TLS, with your own credentials. File contents
 (`llm.send_file_content`) and your current request (`llm.send_task_context`)
 are separate opt-ins, both off.
 
-MIT — see [LICENSE](LICENSE). Schema-verification and design notes in
+MIT — see [LICENSE](LICENSE). Adding a rule, a language, or a host:
+[CONTRIBUTING.md](CONTRIBUTING.md). What was measured rather than assumed:
 [NOTES.md](NOTES.md).
 
 ---

@@ -11,7 +11,7 @@ from .detail import extract_detail
 from .parsing import Parsed
 from .render import (SURFACE_HEADLESS, SURFACE_INTERACTIVE, passes_threshold,
                      render_reason)
-from .rules import analyze, load_path_rules, load_web_rules, match_string_rules
+from .rules import analyze_command, load_path_rules, load_web_rules, match_string_rules
 from .heartbeat import record_heartbeat
 from .tier2 import tier2_explanation
 
@@ -33,7 +33,7 @@ def _analyze_bash(tool_input, config):
     if not command or not command.strip():
         return None
     parsed = Parsed(command)
-    return Analysis(analyze(parsed), command, "bash", command)
+    return Analysis(analyze_command(parsed), command, "bash", command)
 
 
 def _analyze_webfetch(tool_input, config):

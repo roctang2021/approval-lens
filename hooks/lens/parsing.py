@@ -80,9 +80,6 @@ class Parsed:
                     self.stages.append(stage)
                     self.simple_commands.append(SimpleCommand(stage))
 
-    @property
-    def first_stage(self):
-        return self.stages[0] if self.stages else ""
 
 
 class SimpleCommand:

@@ -5,7 +5,8 @@ only when llm.send_task_context is explicitly on."""
 import json
 import os
 
-from .util import one_line
+import traceback
+from .util import log_debug, one_line
 
 # ── task context (opt-in) ─────────────────────────────────────────────────────
 #
@@ -44,7 +45,7 @@ def _scan_transcript(path, wanted):
                     if entry.get("type") == kind and isinstance(entry.get(key), str):
                         found[kind] = entry[key].strip()
     except Exception:
-        pass
+        log_debug("transcript %s unreadable: %s" % (path, traceback.format_exc()))
     return found
 
 

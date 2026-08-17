@@ -8,7 +8,9 @@ import json
 import math
 import os
 
+import traceback
 from .locales import available_langs
+from .util import log_debug
 
 MAX_MESSAGE_CHARS = 500  # default; overridable via config "max_message_chars"
 LANG = "en"              # default; overridable via config "lang"
@@ -99,8 +101,11 @@ def load_config():
             loaded = json.load(fh)
         if isinstance(loaded, dict):
             raw = loaded
+    except FileNotFoundError:
+        pass  # no config file is the normal case, not a failure
     except Exception:
-        pass  # missing/unreadable/malformed config -> pure defaults (fail open)
+        # A typo in the user's JSON silently reverted every setting they wrote.
+        log_debug("config %s unusable: %s" % (path, traceback.format_exc()))
     return validate_config(raw)
 
 

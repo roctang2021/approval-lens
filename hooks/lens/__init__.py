@@ -21,7 +21,7 @@ from .paths import HOOKS_DIR, LOCALES_DIR
 from .parsing import Parsed, SimpleCommand
 from .predicates import has_flag
 from .render import PART_SEP, passes_threshold, render_reason
-from .rules import (analyze, load_path_rules, load_rules, load_web_rules,
+from .rules import (analyze_command, load_path_rules, load_rules, load_web_rules,
                     match_string_rules)
 from .tier2 import (LLM_API_URL, LLM_API_VERSION, LLM_MAX_COMMAND_CHARS,
                     LLM_OAUTH_BETA, LLM_PROMPT_KINDS, TIER2_OUTCOMES, Tier2Result,
@@ -33,7 +33,7 @@ __all__ = [
     "SURFACE_INTERACTIVE", "SURFACE_HEADLESS",
     "load_config", "validate_config", "DEFAULT_CONFIG", "LANG", "MAX_MESSAGE_CHARS",
     "CONFIG_PATH_ENV", "DEFAULT_CONFIG_PATH",
-    "Parsed", "SimpleCommand", "analyze", "match_string_rules", "has_flag",
+    "Parsed", "SimpleCommand", "analyze_command", "match_string_rules", "has_flag",
     "load_rules", "load_web_rules", "load_path_rules", "TOOL_ANALYZERS",
     "render_reason", "passes_threshold", "extract_detail", "PART_SEP",
     "load_locale", "available_langs", "rule_text", "ui_text", "severity_label",

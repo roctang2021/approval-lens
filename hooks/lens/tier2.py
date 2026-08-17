@@ -155,8 +155,11 @@ def _read_credential_file(path):
                 line = line.strip()
                 if line and not line.startswith("#"):
                     return line
+    except FileNotFoundError:
+        pass  # an unconfigured credential file is the normal case
     except Exception:
-        pass
+        # The path, never the contents — this function handles secrets.
+        log_debug("credential file %s unreadable: %s" % (path, traceback.format_exc()))
     return ""
 
 
@@ -279,8 +282,11 @@ def _cache_lookup(path, ttl_days):
         if time.time() - created > ttl_days * 86400:
             return None
         return text
+    except FileNotFoundError:
+        return None  # a cache miss is the normal case
     except Exception:
-        return None  # missing or corrupt cache entry -> treat as a miss
+        log_debug("cache entry %s unreadable: %s" % (path, traceback.format_exc()))
+        return None  # corrupt entry -> treat as a miss
 
 
 def _cache_store(path, text):

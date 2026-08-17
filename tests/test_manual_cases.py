@@ -35,7 +35,7 @@ def _rows(body, pattern):
 
 
 def _severity(command):
-    hits = pl.analyze(pl.Parsed(command))
+    hits = pl.analyze_command(pl.Parsed(command))
     return hits[0]["severity"] if hits else None
 
 
@@ -74,5 +74,5 @@ def test_section_2_severity_matches_the_table(command, m):
 
 @pytest.mark.parametrize("command,_m", SECTION_3, ids=_ids(SECTION_3))
 def test_section_3_cases_stay_silent(command, _m):
-    hits = [h["id"] for h in pl.analyze(pl.Parsed(command))]
+    hits = [h["id"] for h in pl.analyze_command(pl.Parsed(command))]
     assert hits == [], f"{command} now fires {hits}"

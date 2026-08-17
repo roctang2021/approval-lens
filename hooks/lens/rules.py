@@ -71,8 +71,12 @@ def _sort_by_severity(matches):
     return matches
 
 
-def analyze(parsed, rules=None):
-    """Bash analyzer: matched rules, highest severity first (dedup by rule id)."""
+def analyze_command(parsed, rules=None):
+    """Bash analyzer: matched rules, highest severity first.
+
+    Named for its input, not generically: the other tools go through
+    `match_string_rules`, and a bare `analyze` read as if it handled all four.
+    """
     rules = rules if rules is not None else load_rules()
     matches = [rule for rule in rules if _rule_matches(rule, parsed)]
     return _sort_by_severity(matches)

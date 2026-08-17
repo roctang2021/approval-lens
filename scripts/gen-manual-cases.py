@@ -88,7 +88,7 @@ rows_high, rows_mid, seen_cmds = [], [], set()
 for entry in corpus:
     rid = entry["rule"]
     cmd, safe_note = SAFE_PROBE.get(rid, (entry["command"], None))
-    hits = pl.analyze(pl.Parsed(cmd)) if not rid.startswith(("web-", "path-", "content-")) else []
+    hits = pl.analyze_command(pl.Parsed(cmd)) if not rid.startswith(("web-", "path-", "content-")) else []
     if not hits:
         continue
     ids = [m["id"] for m in hits]
@@ -125,7 +125,7 @@ for e in benign:
     if not e.get("clean"):
         continue
     cmd = SAFE_VARIANT.get(e["command"], e["command"])
-    hits = pl.analyze(pl.Parsed(cmd))
+    hits = pl.analyze_command(pl.Parsed(cmd))
     assert not hits, f"safe variant regressed: {cmd!r} -> {[m['id'] for m in hits]}"
     silent.append(cmd.replace("|", "\\|"))
 print(f"（安全替换 {sum(1 for e in benign if e.get('clean') and e['command'] in SAFE_VARIANT)} 条）\n高危(默认弹框): {len(rows_high)}  中低危(默认静默): {len(rows_mid)}  应静默: {len(silent)}")

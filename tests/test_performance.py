@@ -26,7 +26,7 @@ def _all_commands():
 
 def _analyze_once(command):
     parsed = pl.Parsed(command)
-    matches = pl.analyze(parsed)
+    matches = pl.analyze_command(parsed)
     if matches:
         pl.render_reason(matches)
 

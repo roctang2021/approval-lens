@@ -4,9 +4,10 @@ Rule copy describes a CATEGORY of risk; these pull the specific target out of
 the command itself — offline, no model, no network, no privacy cost."""
 import re
 
+import traceback
 from .parsing import Parsed
 from .predicates import _rm_commands, _rm_targets
-from .util import one_line
+from .util import log_debug, one_line
 
 # ── detail extraction ─────────────────────────────────────────────────────────
 #
@@ -71,6 +72,8 @@ def extract_detail(rule, parsed, subject):
     try:
         value = one_line(str(fn(parsed, subject) or ""))
     except Exception:
+        # A broken extractor must cost the target name, never the dialog.
+        log_debug("detail %s failed: %s" % (rule.get("detail"), traceback.format_exc()))
         return ""
     if len(value) > _DETAIL_MAX:
         value = value[:_DETAIL_MAX - 1] + "…"
