@@ -8,12 +8,19 @@ from collections import namedtuple
 
 from .config import load_config
 from .detail import extract_detail
-from .parsing import Parsed
-from .render import (SURFACE_HEADLESS, SURFACE_INTERACTIVE, passes_threshold,
-                     render_reason)
-from .rules import analyze_command, load_path_rules, load_web_rules, match_string_rules
 from .heartbeat import record_heartbeat
+from .parsing import Parsed
+from .render import passes_threshold, render_reason
+from .rules import (analyze_command, load_path_rules, load_web_rules,
+                    match_string_rules)
 from .tier2 import tier2_explanation
+
+# Whether a human is standing by to answer a prompt. The core only ever
+# receives this as a value; discovering it is the adapter's job (see
+# claude_surface), because every host signals it differently.
+SURFACE_INTERACTIVE = "interactive"
+SURFACE_HEADLESS = "headless"
+
 
 # ── per-tool analyzers ────────────────────────────────────────────────────────
 #
@@ -80,7 +87,6 @@ TOOL_ANALYZERS = {
 }
 
 
-
 # ── assessment core ───────────────────────────────────────────────────────────
 #
 # `assess` is the whole product as a function: event in, verdict out. It reads
@@ -134,9 +140,13 @@ def assess(event, config, surface=SURFACE_INTERACTIVE):
 
 
 def build_message(event, config=None, surface=SURFACE_INTERACTIVE):
-    """assess() plus the heartbeat: the reason string, or None to print {}.
+    """What an adapter should call: assess() plus the heartbeat.
 
-    Kept as the convenience entry point for callers that only want the text.
+    The split matters. `assess` is pure and therefore easy to test, but the
+    heartbeat is what makes "is the plugin alive, and was this call actually
+    checked?" answerable — an adapter that called `assess` directly would work
+    while quietly giving up the observability the rest of the project leans on.
+    Returns the reason string, or None meaning print `{}` and stay out of it.
     """
     config = config if config is not None else load_config()
     verdict = assess(event, config, surface)

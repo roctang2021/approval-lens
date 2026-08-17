@@ -23,7 +23,6 @@ _LOCALE_CACHE = {}
 # string instead of breaking. Adding a language = adding one file, no code.
 
 
-
 def available_langs():
     """Language codes with a locale file, e.g. ('en', 'ja', 'zh').
 

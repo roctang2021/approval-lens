@@ -143,8 +143,6 @@ def tier2_explanation(subject, config, kind="bash", event=None):
         return Tier2Result(None, "error")
 
 
-
-
 def _read_credential_file(path):
     """First non-empty line of a credential file, or "" (never logged)."""
     if not path:
@@ -244,8 +242,6 @@ def _run_with_deadline(fn, seconds):
     t.start()
     t.join(seconds)
     return box.get("value")
-
-
 
 
 def _llm_system_prompt(lang, kind, with_task=False):

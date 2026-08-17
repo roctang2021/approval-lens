@@ -75,14 +75,6 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     return _truncate(line, max_chars)
 
 
-
-# Whether a human is standing by to answer a prompt. The core only ever
-# receives this as a value; discovering it is the adapter's job (see
-# claude_surface), because every host signals it differently.
-SURFACE_INTERACTIVE = "interactive"
-SURFACE_HEADLESS = "headless"
-
-
 def passes_threshold(matches, min_severity):
     """The ask.min_severity gate: a rule match at/above `min_severity` passes.
 

@@ -23,15 +23,13 @@ appears (it "floors the decision at a prompt" — CHANGELOG 2.1.211); the human
 always decides. That is the never-gatekeeper core: the plugin can add a prompt
 for a risky call, but can never approve or block anything.
 
-Two tiers:
+Two tiers, both in `lens/`:
   * Tier 1 (always on): offline rule engine over `rules.yaml`. Stdlib + PyYAML.
   * Tier 2 (opt-in via config, default OFF): one Anthropic Messages API call
     that adds a model-written one-liner. Hard wall-clock deadline; any failure
-    silently degrades to the Tier 1 reason. The request body contains ONLY a
-    static system prompt and the command string — never cwd, session id, or
-    transcript contents.
+    silently degrades to the Tier 1 reason.
 
-Config: `~/.config/permission-lens/config.json` (see DEFAULT_CONFIG below).
+Config: `~/.config/permission-lens/config.json` (see `lens/config.py`).
 Unknown/invalid values fall back per-key to the defaults — a broken config can
 never break the hook. Env overrides `PERMISSION_LENS_CONFIG` and
 `PERMISSION_LENS_CACHE_DIR` exist for tests and debugging.
@@ -48,13 +46,12 @@ This project studied dyad-sh/dyad `.claude/hooks/` (Apache-2.0) for stdin
 handling and shell-metacharacter patterns; no code was copied or adapted.
 """
 import json
+import os
 import sys
 import traceback
 
 from lens import SURFACE_HEADLESS, SURFACE_INTERACTIVE, build_message, load_config
 from lens.util import log_debug
-
-import os
 
 # ── Claude Code adapter ───────────────────────────────────────────────────────
 #
@@ -102,12 +99,6 @@ def main():
         log_debug("main: " + traceback.format_exc())
         print("{}")
     sys.exit(0)
-
-
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

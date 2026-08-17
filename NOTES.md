@@ -1233,3 +1233,42 @@ Version 0.27.0. 460 tests, and `check.sh` still exercises the real
   "probes must be harmless even if APPROVED — not because you will click Deny".
 
 Version 0.28.0. 460 tests.
+
+## M31 (2026-08-14): reviewing the refactor
+
+A second pass over the split, looking specifically for damage the tests would
+not catch.
+
+**Behavioural equivalence, measured.** Every command in both corpora and the
+whole checklist — 197 in total — was run through the pre-review build and the
+current one and the outputs diffed. Exactly three real differences, all
+intended (`|&` now a pipe, ssh heredoc now analyzed, `echo "~/.ssh/id_rsa"` now
+silent); the rest of the diff was commands that exist in only one snapshot. A
+targeted second pass confirmed the five `--dry-run`/prose fixes flipped and the
+five "must still fire" cases did not. Tests passing is not the same as
+behaviour preserved, and this is the check that says so.
+
+**Startup cost, measured.** 45ms before, 45ms after, once both are warm. The
+first naive comparison said 109ms → 47ms, which was uv building an environment
+for a fresh worktree, not our code. Worth recording because a hook runs on every
+tool call and "the refactor made it faster" would have been a satisfying and
+wrong conclusion.
+
+**Four defects the review found in my own refactor**, all from scripted code
+movement rather than thinking:
+- `permission_lens.py` had `if __name__ == "__main__": main()` twice.
+- `import os` landed after the `from lens import ...` block.
+- SURFACE_INTERACTIVE/HEADLESS were living in `render.py`, which has nothing to
+  do with whether a human is present. Moving them to `core.py` then cut at the
+  wrong line and dragged `passes_threshold` and `_truncate` along — caught by
+  pyflakes, and the fix was verified by re-running the 197-command diff and
+  getting zero differences from the version before the cleanup.
+- The adapter's docstring still pointed at `DEFAULT_CONFIG below`, which now
+  lives two directories away.
+
+**One design gap, now documented rather than fixed:** `assess` is pure and
+`build_message` adds the heartbeat, so a future adapter that calls `assess`
+directly would work while silently losing the liveness signal. The docstring
+now says which one an adapter is supposed to call and why.
+
+Version 0.28.1. 460 tests, pyflakes clean.

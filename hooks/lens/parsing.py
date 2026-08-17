@@ -81,7 +81,6 @@ class Parsed:
                     self.simple_commands.append(SimpleCommand(stage))
 
 
-
 class SimpleCommand:
     """A single pipeline stage tokenized best-effort into argv."""
 
