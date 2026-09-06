@@ -2,7 +2,8 @@
 
 Reviewed 2026-09-05. Source is public at
 [roctang2021/approval-lens](https://github.com/roctang2021/approval-lens).
-This is a preview; a stable release still needs the live acceptance checks below.
+Live acceptance is still incomplete. The checks below track product verification;
+they are separate from Anthropic's plugin-directory review.
 
 ## Fixed in this review
 
@@ -52,7 +53,24 @@ modes, then exercise a real model request, locale selection and fallback.
 Record host version, observed text and waiting time. The README's disk-writing
 example is an illustration, not captured model output.
 
-Keep 0.29.0 marked as unreleased until live acceptance is complete.
+Before declaring a stable release, complete these checks and record the results.
+This is the project's quality recommendation, not a directory submission rule.
+
+## Official directory submission
+
+The public repository is installable through its own marketplace. Listing in
+Anthropic's official directory requires a separate submission and review.
+
+[Anthropic's submission guide](https://claude.com/docs/plugins/submit) calls for
+a public GitHub repository, plugin validation and compliance with its directory
+terms and policy. It does not list a stable-release label, a GitHub Release or a
+1.0 version number as a submission prerequisite. Passing local checks does not
+guarantee acceptance or an Anthropic Verified badge.
+
+Individual authors can submit through the
+[Console form](https://platform.claude.com/plugins/submit) with a Developer,
+Admin or Owner role in a Console organization. This repository has not yet
+been submitted to the official directory.
 
 ## Scope to retain in release copy
 
