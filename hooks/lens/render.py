@@ -4,40 +4,16 @@ from .locales import (INFO_EMOJI, SEVERITY_EMOJI, SEVERITY_ORDER, load_locale,
                       rule_text, severity_label, ui_text)
 from .util import one_line
 
-# ── reason formatting ─────────────────────────────────────────────────────────
-#
-# The reason renders on the permission dialog as ONE flowing line (the dialog
-# collapses \n — probe-verified 2026-07-19), so hierarchy has to come from
-# ordering and separators rather than layout:
-#
-#   {🔴 severity} · {concrete target} · {why this class is risky} · AI: {facts}
-#
-# Severity leads because it decides whether to keep reading; the target comes
-# next because "which host / which file" is the most decision-relevant fact and
-# deserves the position the eye lands on first. Model text always comes last,
-# behind an explicit "AI:" label — the reader must be able to tell audited rule
-# copy from generated text, since only the former is deterministic. An
-# unexplained 🤖/📍 emoji did not carry that meaning (owner feedback 2026-07-25).
+# Single-line layout: severity, target, rule risk, then an optional model note.
 
 PART_SEP = " · "
-# The model segment is wrapped in parentheses rather than joined with `·`.
-# `·` reads as "another item of the same kind", which is wrong for a fallible
-# aside sitting beside audited copy; a dash collides with the em dashes the rule
-# copy already uses. Parentheses are the standard typographic signal for
-# supplementary, subordinate text — they demote it without hiding it (owner
-# feedback 2026-07-25: a bare "AI:" read as a debug tag).
-AI_WRAP_FALLBACK = " (AI note: {})"
+# Label the explanation by its purpose; document the provider in configuration.
+EXPLANATION_WRAP_FALLBACK = " · What this does: {}"
 
 
 def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None,
                   detail=""):
-    """Matched rules -> the single-line permissionDecisionReason.
-
-    Requires at least one match (the ask gate guarantees it). The risk sentence
-    is the top rule's `risk` copy — a self-contained plain-language sentence:
-    what this class of call does AND why it matters, no jargon. `detail` is the
-    concrete target pulled from the command itself (see extract_detail).
-    """
+    """Render nonempty, severity-sorted matches as a single-line reason."""
     locale = load_locale(lang)
     top = matches[0]
     sev = top["severity"]
@@ -46,9 +22,7 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
     if detail:
         parts.append(detail)
     parts.append(rule_text(locale, top["id"], "risk"))
-    # Up to two additional distinct risks (dedupe by category to avoid near-dupes);
-    # extras use the short `explanation` phrase and keep their own severity dot,
-    # which is what distinguishes them from the headline at a glance.
+    # Include up to two other risk categories, using short labels.
     seen = {top["category"]}
     extras = 0
     for rule in matches[1:]:
@@ -60,27 +34,22 @@ def render_reason(matches, lang=LANG, max_chars=MAX_MESSAGE_CHARS, llm_text=None
         extras += 1
         if extras == 2:
             break
-    # Tier 2 goes last so truncation always prefers the deterministic Tier 1
-    # content over the model-written extra.
+    # Append the model note last so truncation preserves rule text first.
     line = PART_SEP.join(one_line(p) for p in parts)
     if llm_text:
-        # The template owns the label, the brackets, and the leading space, so
-        # each locale follows its own convention (en " (AI note: {})",
-        # zh "（AI 解读：{}）"). A template missing its {} would silently drop the
-        # model text, so fall back rather than trust it.
-        wrap = ui_text(locale, "ai_wrap", AI_WRAP_FALLBACK)
+        # Each locale owns the label and spacing. A missing placeholder would
+        # silently drop the model text, so use the fallback template.
+        wrap = ui_text(locale, "ai_wrap", EXPLANATION_WRAP_FALLBACK)
         if "{}" not in wrap:
-            wrap = AI_WRAP_FALLBACK
+            wrap = EXPLANATION_WRAP_FALLBACK
         line += wrap.format(one_line(llm_text))
     return _truncate(line, max_chars)
 
 
 def passes_threshold(matches, min_severity):
-    """The ask.min_severity gate: a rule match at/above `min_severity` passes.
+    """Compare the top match to the threshold. Use a validated ask.min_severity.
 
-    'info' passes everything including no-match calls; ask never accepts it, so
-    the gate can only fire on an actual match. The branch is kept because
-    SEVERITY_ORDER has no entry for 'info' and unknown values must not pass."""
+    The legacy zero threshold also passes unmatched calls; config excludes it."""
     threshold = SEVERITY_ORDER.get(min_severity, 0)  # "info" and unknown -> 0
     if not matches:
         return threshold <= 0

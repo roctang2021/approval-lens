@@ -1,17 +1,16 @@
 """Loading rule data and deciding which rules a command matches."""
-import os
 import re
 
 from .locales import SEVERITY_ORDER
 from .paths import PATH_RULES_PATH, RULES_PATH, WEB_RULES_PATH
-from .predicates import PREDICATES, has_flag
+from .predicates import PREDICATES, flag_disarms
+from .util import log_debug
 
 try:
     import yaml
 except Exception:  # pragma: no cover
     yaml = None
 
-# ── rule engine ───────────────────────────────────────────────────────────────
 
 _RULES_CACHE = {}  # keyed by yaml path -> compiled rule list
 
@@ -20,6 +19,8 @@ def _load_rules_from(path, default_field="path"):
     if path in _RULES_CACHE:
         return _RULES_CACHE[path]
     if yaml is None:
+        # Missing PyYAML disables rule loading; keep a debug diagnostic.
+        log_debug("rules: PyYAML unavailable, %s loads as empty" % path)
         _RULES_CACHE[path] = []
         return []
     with open(path, "r", encoding="utf-8") as fh:
@@ -31,19 +32,18 @@ def _load_rules_from(path, default_field="path"):
             "category": raw.get("category", ""),
             "severity": raw.get("severity", "low"),
             "regex": re.compile(raw["regex"]) if raw.get("regex") else None,
-            # Optional guard: the program this rule is about. Fullmatched against
-            # each argv token's basename, so it is anchored no matter how the
-            # YAML writes it. See _verb_matches.
+            # Optional guard: fullmatched against actual command names,
+            # including wrappers, never arbitrary argv operands.
             "verb": re.compile(raw["verb"]) if raw.get("verb") else None,
+            # A real downstream pipeline/process-input receiver, after unwrapping.
+            "pipe_to": re.compile(raw["pipe_to"]) if raw.get("pipe_to") else None,
             # Optional inverse guard: verbs that make the match inert. `echo`
             # printing a path is not a read of that path.
             "not_verb": re.compile(raw["not_verb"]) if raw.get("not_verb") else None,
             "predicate": raw.get("predicate"),
-            # whole (default) | segment | argv (per path-like token) |
-            # redirect (per > / >> target)
-            "scope": raw.get("scope", "whole"),
-            # Flags that disarm the rule: `npm publish --dry-run` uploads
-            # nothing, so warning about an irreversible publish is a false alarm.
+            # segment (default) | pipeline | process | argv | redirect
+            "scope": raw.get("scope", "segment"),
+            # Flags that disable the operation on this stage, such as --dry-run.
             "without_flags": tuple(raw.get("without_flags") or ()),
             # which subject string a string-rule matches against (see match_string_rules)
             "field": raw.get("field", default_field),
@@ -72,96 +72,90 @@ def _sort_by_severity(matches):
 
 
 def analyze_command(parsed, rules=None):
-    """Bash analyzer: matched rules, highest severity first.
-
-    Named for its input, not generically: the other tools go through
-    `match_string_rules`, and a bare `analyze` read as if it handled all four.
-    """
+    """Match shell rules and attach evidence, highest severity first."""
     rules = rules if rules is not None else load_rules()
-    matches = [rule for rule in rules if _rule_matches(rule, parsed)]
+    matches = []
+    for rule in rules:
+        subject = _matching_subject(rule, parsed)
+        if subject is not None:
+            # Never mutate a cached rule. Evidence belongs to this invocation
+            # and is passed to the detail extractor with the matching rule.
+            matches.append({**rule, "_match_subject": subject})
     return _sort_by_severity(matches)
 
 
-# Programs that run another program: their own name hides the real verb, so a
-# stage starting with one is scanned in full. Deliberately excludes anything
-# whose argument could look like a command name to a reader (`watch`, `sh -c`).
-_VERB_WRAPPERS = {"sudo", "doas", "env", "nohup", "nice", "timeout", "stdbuf",
-                  "command", "exec", "xargs"}
-
-
 def _command_names(sc):
-    """Program names in COMMAND position for one pipeline stage.
-
-    Normally just the stage's own verb: in `echo mkfs`, `mkfs` is an argument
-    being printed, not a program being run. When the stage starts with a
-    wrapper (`sudo curl …`, `env X=1 curl …`, `nice -n 5 curl …`) the wrapper's
-    own name tells us nothing, so every token is considered — the wrapper is
-    itself proof that a command is being invoked.
-    """
-    if not sc.name:
-        return []
-    if sc.name in _VERB_WRAPPERS:
-        return [os.path.basename(tok) for tok in sc.argv]
-    return [sc.name]
+    """Executable names for a stage, including supported wrappers."""
+    return sc.command_names()
 
 
-def _verb_matches(rule, parsed):
-    """Does the command actually INVOKE the program this rule is about?
+# Evaluate guards per stage: an echo or --dry-run elsewhere in the
+# command must not suppress a match on this stage.
 
-    Regexes run against the raw command text, so `echo "curl … | bash"` and
-    `git commit -m "fix the curl | bash path"` used to fire 🔴 — the analyzer
-    knew better (its quote-aware split sees a single `echo` stage) but the
-    rules threw that away. A rule with a `verb:` only fires when some stage
-    actually runs that program.
-
-    Quote safety comes for free: a quoted run of words survives shlex as ONE
-    token, so an anchored fullmatch can never see the `curl` inside it.
-    """
-    verb = rule.get("verb")
-    if not verb:
-        return True
-    return any(verb.fullmatch(name)
-               for sc in parsed.simple_commands
-               for name in _command_names(sc))
+def _runs_verb(rule, sc):
+    """Match executable names on this stage, excluding ordinary arguments."""
+    return any(rule["verb"].fullmatch(name) for name in sc.command_names())
 
 
-def _disarmed_by_flags(rule, parsed):
-    """True when a flag on the invoking stage makes this rule inapplicable."""
-    without = rule["without_flags"]
-    if not without:
-        return False
-    return any(has_flag(sc, flag)
-               for sc in parsed.simple_commands
-               for flag in without)
+def _is_inert(rule, sc):
+    """`not_verb`: printing a path is not touching it — for this stage only."""
+    not_verb = rule["not_verb"]
+    return bool(not_verb) and any(not_verb.fullmatch(name) for name in sc.command_names())
 
 
-def _rule_matches(rule, parsed):
-    if not _verb_matches(rule, parsed):
-        return False
-    if rule["not_verb"] and any(rule["not_verb"].fullmatch(name)
-                                for sc in parsed.simple_commands
-                                for name in _command_names(sc)):
-        return False
+def _is_disarmed(rule, sc):
+    """`without_flags`, read off the stage that invokes the verb."""
+    return any(flag_disarms(sc.unwrap(), flag) for flag in rule["without_flags"])
+
+
+def _actor_stages(rule, parsed):
+    """The stages that could be the one this rule is about."""
+    stages = [sc for sc in parsed.simple_commands if not _is_inert(rule, sc)]
+    if rule["verb"]:
+        stages = [sc for sc in stages
+                  if _runs_verb(rule, sc) and not _is_disarmed(rule, sc)]
+    return stages
+
+
+def _matching_subject(rule, parsed):
+    """The actual matching stage/connection/target, or None for no match."""
+    actors = _actor_stages(rule, parsed)
+    if not actors and (rule["verb"] or rule["not_verb"]):
+        return None
     if rule["predicate"]:
         fn = PREDICATES.get(rule["predicate"])
-        return bool(fn and fn(parsed))
+        sc = fn(parsed) if fn else None
+        return sc.raw if sc is not None else None
     regex = rule["regex"]
-    if not regex:
-        return False
-    if _disarmed_by_flags(rule, parsed):
-        return False
     scope = rule["scope"]
-    if scope == "segment":
-        return any(regex.search(stage) for stage in parsed.stages)
-    if scope == "argv":
-        return any(regex.search(tok)
-                   for sc in parsed.simple_commands for tok in sc.path_tokens())
-    if scope == "redirect":
-        return any(regex.search(target)
-                   for sc in parsed.simple_commands for target in sc.redirect_targets())
-    # `code`, not `command`: a heredoc payload that is data must not be scanned
-    # as if it were shell (see _strip_heredoc_payloads).
-    return bool(regex.search(parsed.code))
+    sink = rule.get("pipe_to")
+    if scope == "pipeline" and sink:
+        for pipeline in parsed.pipelines:
+            for i, sc in enumerate(pipeline):
+                if sc not in actors or (regex and not regex.search(sc.match_text())):
+                    continue
+                for j in range(i + 1, len(pipeline)):
+                    if sink.fullmatch(pipeline[j].unwrap().name):
+                        return " | ".join(stage.raw for stage in pipeline[i:j + 1])
+        return None
+    if scope == "process" and sink:
+        for receiver, body in parsed.process_inputs:
+            if sink.fullmatch(receiver.unwrap().name):
+                for sc in _actor_stages(rule, body):
+                    if not regex or regex.search(sc.match_text()):
+                        return sc.raw
+        return None
+    if not regex:
+        return None
+    for sc in actors:
+        if scope in ("argv", "redirect"):
+            subjects = sc.path_tokens() if scope == "argv" else sc.redirect_targets()
+            for subject in subjects:
+                if regex.search(subject):
+                    return subject
+        elif regex.search(sc.match_text()):
+            return sc.raw
+    return None
 
 
 def match_string_rules(rules, subjects):

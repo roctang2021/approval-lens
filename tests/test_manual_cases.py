@@ -1,12 +1,4 @@
-"""The checklist must agree with the rules it is supposed to exercise.
-
-Written after a rule change silently invalidated a case: `dd of=/dev/null` was
-section 1's deliberately-harmless 🔴 probe, and excluding pseudo-devices from
-dd-to-device (correctly) made it match nothing — so the checklist went on
-promising a red dialog that could no longer appear. The owner caught it by eye.
-A checklist that has drifted from the rules is worse than none: every miss it
-produces reads as a plugin bug.
-"""
+"""Check that documented analysis examples match their stated severity."""
 import re
 import sys
 from pathlib import Path
@@ -16,7 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "hooks"))
 
-import lens as pl  # noqa: E402
+import lens as al  # noqa: E402
 
 DOC = ROOT / "scripts" / "manual-test-cases.md"
 EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
@@ -35,7 +27,7 @@ def _rows(body, pattern):
 
 
 def _severity(command):
-    hits = pl.analyze_command(pl.Parsed(command))
+    hits = al.analyze_command(al.Parsed(command))
     return hits[0]["severity"] if hits else None
 
 
@@ -74,5 +66,5 @@ def test_section_2_severity_matches_the_table(command, m):
 
 @pytest.mark.parametrize("command,_m", SECTION_3, ids=_ids(SECTION_3))
 def test_section_3_cases_stay_silent(command, _m):
-    hits = [h["id"] for h in pl.analyze_command(pl.Parsed(command))]
+    hits = [h["id"] for h in al.analyze_command(al.Parsed(command))]
     assert hits == [], f"{command} now fires {hits}"

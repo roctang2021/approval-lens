@@ -6,12 +6,11 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import lens as pl  # noqa: E402
+import lens as al  # noqa: E402
 from lens import tier2  # noqa: E402
 import conftest  # noqa: E402
 
@@ -27,12 +26,12 @@ def _event(command):
 
 
 def _read_heartbeat():
-    with open(pl.cache_dir() / pl.HEARTBEAT_FILE, "r", encoding="utf-8") as fh:
+    with open(al.cache_dir() / al.HEARTBEAT_FILE, "r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
 def test_high_call_records_severity_and_ask():
-    assert pl.build_message(_event(HIGH_CMD), _cfg()) is not None
+    assert al.build_message(_event(HIGH_CMD), _cfg()) is not None
     hb = _read_heartbeat()
     assert hb["last"]["tool"] == "Bash"
     assert hb["last"]["severity"] == "high"
@@ -42,7 +41,7 @@ def test_high_call_records_severity_and_ask():
 
 
 def test_benign_call_records_none_and_no_ask():
-    assert pl.build_message(_event("ls -la"), _cfg()) is None  # silent output...
+    assert al.build_message(_event("ls -la"), _cfg()) is None  # silent output...
     hb = _read_heartbeat()                                     # ...but checked
     assert hb["last"]["severity"] is None
     assert hb["last"]["asked"] is False
@@ -51,40 +50,40 @@ def test_benign_call_records_none_and_no_ask():
 
 
 def test_counts_accumulate_within_a_day():
-    pl.build_message(_event(HIGH_CMD), _cfg())
-    pl.build_message(_event("git push --force origin main"), _cfg())  # medium, silent
-    pl.build_message(_event("ls -la"), _cfg())
+    al.build_message(_event(HIGH_CMD), _cfg())
+    al.build_message(_event("git push --force origin main"), _cfg())  # medium, silent
+    al.build_message(_event("ls -la"), _cfg())
     hb = _read_heartbeat()
     assert hb["counts"] == {"total": 3, "high": 1, "medium": 1, "low": 0,
                             "none": 1, "asked": 1}
 
 
 def test_counters_reset_on_a_new_day():
-    path = pl.cache_dir() / pl.HEARTBEAT_FILE
+    path = al.cache_dir() / al.HEARTBEAT_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "version": 1, "today": "2001-01-01",
         "counts": {"total": 99, "high": 9, "medium": 0, "low": 0, "none": 90, "asked": 9},
         "last": {"ts": 0, "tool": "Bash", "severity": "high", "asked": True},
     }), encoding="utf-8")
-    pl.build_message(_event("ls -la"), _cfg())
+    al.build_message(_event("ls -la"), _cfg())
     hb = _read_heartbeat()
     assert hb["today"] != "2001-01-01"
     assert hb["counts"]["total"] == 1  # stale day discarded, not accumulated
 
 
 def test_corrupt_heartbeat_is_replaced_not_fatal():
-    path = pl.cache_dir() / pl.HEARTBEAT_FILE
+    path = al.cache_dir() / al.HEARTBEAT_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{{{ not json", encoding="utf-8")
-    reason = pl.build_message(_event(HIGH_CMD), _cfg())
+    reason = al.build_message(_event(HIGH_CMD), _cfg())
     assert reason is not None  # contract unaffected
     assert _read_heartbeat()["counts"]["total"] == 1  # fresh state written
 
 
 def test_heartbeat_never_contains_command_text():
-    pl.build_message(_event(HIGH_CMD), _cfg())
-    raw = (pl.cache_dir() / pl.HEARTBEAT_FILE).read_text(encoding="utf-8")
+    al.build_message(_event(HIGH_CMD), _cfg())
+    raw = (al.cache_dir() / al.HEARTBEAT_FILE).read_text(encoding="utf-8")
     assert "curl" not in raw and "x.example.com" not in raw
 
 
@@ -93,7 +92,7 @@ def test_heartbeat_failure_cannot_break_the_hook(monkeypatch):
     def boom(*a, **k):
         raise OSError("disk on fire")
     monkeypatch.setattr(_os, "replace", boom)
-    reason = pl.build_message(_event(HIGH_CMD), _cfg())
+    reason = al.build_message(_event(HIGH_CMD), _cfg())
     assert reason is not None and reason.startswith("🔴")  # fail-open preserved
 
 
@@ -101,20 +100,19 @@ def test_heartbeat_failure_cannot_break_the_hook(monkeypatch):
 
 def _llm_cfg(**over):
     cfg = _cfg()
-    cfg["llm"].update({"enabled": True, "api_key_env": "PL_NO_SUCH_KEY",
-                       "auth_token_env": "PL_NO_SUCH_TOKEN", **over})
+    cfg["llm"].update({"enabled": True, "api_key_env": "AL_NO_SUCH_KEY", **over})
     return cfg
 
 
 def test_outcome_off_when_tier2_disabled():
-    pl.build_message(_event(HIGH_CMD), _cfg())
+    al.build_message(_event(HIGH_CMD), _cfg())
     assert _read_heartbeat().get("tier2", {}).get("outcome") == "off"
 
 
 def test_outcome_no_credential_is_recorded(monkeypatch):
-    monkeypatch.delenv("PL_NO_SUCH_KEY", raising=False)
-    monkeypatch.delenv("PL_NO_SUCH_TOKEN", raising=False)
-    pl.build_message(_event(HIGH_CMD), _llm_cfg())
+    monkeypatch.delenv("AL_NO_SUCH_KEY", raising=False)
+    monkeypatch.delenv("AL_NO_SUCH_TOKEN", raising=False)
+    al.build_message(_event(HIGH_CMD), _llm_cfg())
     # The exact case that made Tier 2 look broken on a GUI-launched app.
     assert _read_heartbeat().get("tier2", {}).get("outcome") == "no_credential"
 
@@ -132,12 +130,12 @@ def test_outcome_ok_then_cached(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    monkeypatch.setenv("AL_TEST_KEY", "sk-test")
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: Resp())
-    cfg = _llm_cfg(api_key_env="PL_TEST_KEY")
-    pl.build_message(_event(HIGH_CMD), cfg)
+    cfg = _llm_cfg(api_key_env="AL_TEST_KEY")
+    al.build_message(_event(HIGH_CMD), cfg)
     assert _read_heartbeat().get("tier2", {}).get("outcome") == "ok"
-    pl.build_message(_event(HIGH_CMD), cfg)
+    al.build_message(_event(HIGH_CMD), cfg)
     assert _read_heartbeat().get("tier2", {}).get("outcome") == "cached"
 
 
@@ -146,19 +144,19 @@ def test_outcome_empty_on_api_failure(monkeypatch):
 
     def boom(*a, **k):
         raise OSError("no network")
-    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    monkeypatch.setenv("AL_TEST_KEY", "sk-test")
     monkeypatch.setattr(urllib.request, "urlopen", boom)
-    pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    al.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="AL_TEST_KEY"))
     assert _read_heartbeat().get("tier2", {}).get("outcome") == "empty"
 
 
 def test_benign_call_does_not_overwrite_tier2_status(monkeypatch):
-    monkeypatch.setenv("PL_TEST_KEY", "sk-test")
+    monkeypatch.setenv("AL_TEST_KEY", "sk-test")
     # A benign call is below the ask gate, so Tier 2 is never consulted — the
     # outcome must not leak from a previous call in the same process.
-    pl.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    al.build_message(_event(HIGH_CMD), _llm_cfg(api_key_env="AL_TEST_KEY"))
     before = _read_heartbeat()["tier2"]
-    pl.build_message(_event("ls -la"), _llm_cfg(api_key_env="PL_TEST_KEY"))
+    al.build_message(_event("ls -la"), _llm_cfg(api_key_env="AL_TEST_KEY"))
     # The benign call must NOT overwrite the Tier 2 status — otherwise the
     # status would read "off" almost always and hide the real outcome.
     assert _read_heartbeat()["tier2"] == before
@@ -168,19 +166,19 @@ def test_credential_file_is_used_when_env_is_empty(tmp_path, monkeypatch):
     # The GUI-app case: no env vars anywhere, credential comes from a file.
     key_file = tmp_path / "api-key"
     key_file.write_text("# comment line\n\nsk-from-file\n", encoding="utf-8")
-    monkeypatch.delenv("PL_NO_SUCH_KEY", raising=False)
-    cred = tier2._resolve_credential({"api_key_env": "PL_NO_SUCH_KEY",
+    monkeypatch.delenv("AL_NO_SUCH_KEY", raising=False)
+    cred = tier2._resolve_credential({"api_key_env": "AL_NO_SUCH_KEY",
                                    "api_key_file": str(key_file)})
-    assert cred == ("api_key", "sk-from-file")
+    assert cred == "sk-from-file"
 
 
 def test_env_wins_over_file(tmp_path, monkeypatch):
     key_file = tmp_path / "api-key"
     key_file.write_text("sk-from-file\n", encoding="utf-8")
-    monkeypatch.setenv("PL_TEST_KEY", "sk-from-env")
-    cred = tier2._resolve_credential({"api_key_env": "PL_TEST_KEY",
+    monkeypatch.setenv("AL_TEST_KEY", "sk-from-env")
+    cred = tier2._resolve_credential({"api_key_env": "AL_TEST_KEY",
                                    "api_key_file": str(key_file)})
-    assert cred == ("api_key", "sk-from-env")
+    assert cred == "sk-from-env"
 
 
 def test_missing_or_empty_credential_file_is_not_fatal(tmp_path):
@@ -190,18 +188,12 @@ def test_missing_or_empty_credential_file_is_not_fatal(tmp_path):
     assert tier2._resolve_credential({"api_key_file": str(empty)}) is None
 
 
-def test_auth_token_file_maps_to_oauth(tmp_path):
-    f = tmp_path / "token"
-    f.write_text("oauth-token-value\n", encoding="utf-8")
-    assert tier2._resolve_credential({"auth_token_file": str(f)}) == ("oauth", "oauth-token-value")
-
-
 def test_heartbeat_records_the_running_build():
     """The checkout and the build that handled the call routinely disagree —
     the installed plugin lives in a versioned copy and only changes on
     `plugin update` + app restart. Recording the running version is what lets
-    lens-status flag the mismatch instead of reporting the repo's number and
+    approval-lens-status flag the mismatch instead of reporting the repo's number and
     sending someone off to debug a fix that was never live."""
-    pl.build_message(_event(HIGH_CMD), _cfg())
+    al.build_message(_event(HIGH_CMD), _cfg())
     running = _read_heartbeat().get("running")
-    assert running and running == pl.plugin_version()
+    assert running and running == al.plugin_version()

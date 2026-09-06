@@ -13,7 +13,7 @@ HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import lens as pl  # noqa: E402
+import lens as al  # noqa: E402
 
 
 def _all_commands():
@@ -25,14 +25,14 @@ def _all_commands():
 
 
 def _analyze_once(command):
-    parsed = pl.Parsed(command)
-    matches = pl.analyze_command(parsed)
+    parsed = al.Parsed(command)
+    matches = al.analyze_command(parsed)
     if matches:
-        pl.render_reason(matches)
+        al.render_reason(matches)
 
 
 def test_each_command_under_50ms():
-    pl.load_rules()  # warm the rule cache (one-time YAML load, excluded from budget)
+    al.load_rules()  # warm the rule cache (one-time YAML load, excluded from budget)
     slow = []
     for command in _all_commands():
         # best-of-3 to smooth scheduler jitter on shared CI runners
@@ -43,7 +43,7 @@ def test_each_command_under_50ms():
 
 
 def test_corpus_average_well_under_budget():
-    pl.load_rules()
+    al.load_rules()
     commands = _all_commands()
     start = time.perf_counter()
     for command in commands:

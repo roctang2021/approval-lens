@@ -1,13 +1,15 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "permission-lens",
-  "displayName": "Permission Lens",
-  "version": "0.28.1",
-  "description": "Puts a plain-language risk explanation on the permission dialog for risky operations — asks, never decides for you.",
+  "name": "approval-lens",
+  "displayName": "Approval Lens",
+  "version": "0.29.0",
+  "description": "Understand what Claude Code is about to do before you approve it. Plain-language explanations in 6 languages.",
   "author": {
     "name": "roctang2021"
   },
   "license": "MIT",
+  "homepage": "https://github.com/roctang2021/approval-lens",
+  "repository": "https://github.com/roctang2021/approval-lens",
   "keywords": [
     "hooks",
     "permissions",

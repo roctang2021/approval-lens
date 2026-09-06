@@ -1,10 +1,6 @@
-# Permission Lens — Tier 1 rule data for the WebFetch tool.
-#
-# Same rule shape as rules.yaml, but each `regex` is matched against the URL
-# string (tool_input.url), not a shell command. WebFetch is read-only, so most
-# signals are low/medium — informational, not destructive.
-# Matching logic only — user-visible text lives in hooks/locales/<lang>.yaml
-# under `rules.<id>` (see rules.yaml's header).
+# URL patterns for the current Claude WebFetch input.
+# These detect address features, without fetching or inspecting a response.
+# Text lives in locales/<lang>.yaml.
 
 rules:
   - id: web-userinfo
@@ -30,10 +26,3 @@ rules:
     severity: low
     regex: "://([\\w.-]*\\.)?(raw\\.githubusercontent\\.com|gist\\.githubusercontent\\.com|pastebin\\.com|bit\\.ly|tinyurl\\.com|goo\\.gl)(:|/|$)"
     detail: url_host
-
-# Removed 2026-07-25: `web-insecure-http` warned that http:// is transmitted in
-# the clear — but the WebFetch tool upgrades HTTP to HTTPS before the request
-# leaves, so the interception it described cannot happen. A rule that asserts an
-# impossible risk is worse than no rule: it spends the reader's trust for
-# nothing. (`curl http://…` in Bash IS plaintext, but that is a different rule
-# against a different tool and does not exist yet.)

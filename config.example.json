@@ -1,17 +1,16 @@
 {
   "lang": "en",
   "ask": {
-    "min_severity": "high"
+    "min_severity": "high",
+    "non_interactive": "silent"
   },
   "max_message_chars": 500,
   "llm": {
     "enabled": false,
-    "model": "claude-haiku-4-5",
-    "timeout_seconds": 3.0,
+    "model": "claude-sonnet-5",
+    "timeout_seconds": 5.0,
     "api_key_env": "ANTHROPIC_API_KEY",
-    "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
     "api_key_file": "",
-    "auth_token_file": "",
     "cache_ttl_days": 7,
     "send_file_content": false,
     "send_task_context": false

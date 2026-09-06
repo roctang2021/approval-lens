@@ -1,8 +1,4 @@
-"""Where the package's data files live.
-
-Resolved once, here, because the code moved into a subpackage while rules.yaml
-and locales/ stayed beside the hook entry point — every `Path(__file__)` in a
-submodule would otherwise be off by one directory."""
+"""Data paths resolved relative to the installed package."""
 from pathlib import Path
 
 HOOKS_DIR = Path(__file__).resolve().parent.parent

@@ -1,16 +1,16 @@
 {
-  "name": "permission-lens",
+  "name": "approval-lens",
   "owner": {
     "name": "roctang2021"
   },
   "metadata": {
-    "description": "Single-plugin marketplace for Permission Lens — plain-language risk explanations on Claude Code permission dialogs."
+    "description": "Claude Code plugin marketplace for Approval Lens."
   },
   "plugins": [
     {
-      "name": "permission-lens",
+      "name": "approval-lens",
       "source": "./",
-      "description": "Puts a plain-language risk explanation on the permission dialog for risky operations — asks, never decides for you."
+      "description": "Understand what Claude Code is about to do before you approve it. Plain-language explanations in 6 languages."
     }
   ]
 }

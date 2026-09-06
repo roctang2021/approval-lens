@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
-"""Probe: does PreToolUse permissionDecision="ask" render its reason on the dialog?
+"""Standalone Claude PreToolUse rendering probe; not installed with the plugin.
 
-Docs (hooks § PreToolUse decision control) say permissionDecisionReason is
-"shown to the user but not Claude" for "ask" — but not WHERE. This probe always
-returns "ask" with an unmistakable two-line marker and logs every invocation
-(stdin + stdout) to ~/.cache/permission-lens/probe-ask.log, so a live session
-proves both that the hook fired and where the text landed.
-
-Not part of the plugin — register it manually per README.md in this directory.
-Stdlib only, so it runs under the bare `python3` even from Desktop's minimal
-GUI PATH. Never gates: any internal error prints {} and exits 0 (on PreToolUse,
-exit 2 would block the tool call — never do that here).
-"""
+Always requests confirmation with a two-line marker. Logs complete input and
+output to ~/.cache/approval-lens/probe-ask.log; use only safe test inputs.
+Handled errors emit {} and exit zero. See the adjacent README for setup."""
 import datetime
 import json
 import pathlib
@@ -36,7 +28,7 @@ def main():
         },
         ensure_ascii=False,
     )
-    log = pathlib.Path.home() / ".cache" / "permission-lens" / "probe-ask.log"
+    log = pathlib.Path.home() / ".cache" / "approval-lens" / "probe-ask.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as f:
         f.write(

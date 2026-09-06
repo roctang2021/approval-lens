@@ -1,8 +1,6 @@
-"""The product as a function: an event in, a verdict out.
+"""Assess pending actions and build localized explanations.
 
-Reads no environment and does no host-specific I/O, so every adapter shares it
-unchanged. How the event arrives, how the verdict is expressed, and whether a
-human is present all belong to the adapter."""
+Inputs still use Claude tool fields; see docs/architecture.md for adapter boundaries."""
 import os
 from collections import namedtuple
 
@@ -15,22 +13,13 @@ from .rules import (analyze_command, load_path_rules, load_web_rules,
                     match_string_rules)
 from .tier2 import tier2_explanation
 
-# Whether a human is standing by to answer a prompt. The core only ever
-# receives this as a value; discovering it is the adapter's job (see
-# claude_surface), because every host signals it differently.
+# The adapter supplies interactivity; each host detects it differently.
 SURFACE_INTERACTIVE = "interactive"
 SURFACE_HEADLESS = "headless"
 
 
-# ── per-tool analyzers ────────────────────────────────────────────────────────
-#
-# Each analyzer maps one tool's tool_input to a common Analysis:
-#   Analysis(matches, tier2_subject, tier2_kind, detail_subject)
-# or None to stay silent (unknown/empty input → native dialog, no annotation).
-# tool_input field names verified from real transcripts (NOTES.md, item 1).
-#
-#   tier2_subject   what the model may see (path only, unless send_file_content)
-#   detail_subject  what the offline detail extractor reads — never file bodies
+# Analyzers map Claude tool_input fields to shared matching/rendering inputs.
+# The model subject may include opted-in content; detail_subject never does.
 
 Analysis = namedtuple("Analysis", "matches tier2_subject tier2_kind detail_subject")
 
@@ -71,8 +60,7 @@ def _analyze_file(tool_input, config, content_key):
     subjects = {"path": os.path.expanduser(path)}
     if content:
         subjects["content"] = content
-    # Tier 2 subject is the PATH only by default. File content is a much larger
-    # data surface, so it is sent only when llm.send_file_content is on.
+    # Include file content in the model subject only with explicit opt-in.
     subject = path
     if config["llm"]["send_file_content"] and content:
         subject = f"{path}\n\n{content}"
@@ -87,29 +75,15 @@ TOOL_ANALYZERS = {
 }
 
 
-# ── assessment core ───────────────────────────────────────────────────────────
-#
-# `assess` is the whole product as a function: event in, verdict out. It reads
-# no environment and performs no I/O beyond the rule/locale files and the
-# optional Tier 2 call, so every host adapter can share it unchanged. Anything
-# host-specific — how the event arrives, how the verdict is expressed, whether
-# a human is present — belongs to the adapter below.
-
 Assessment = namedtuple("Assessment", "matches asked reason tier2_outcome")
 SILENT = Assessment(matches=(), asked=False, reason=None, tier2_outcome="off")
 
 
 def assess(event, config, surface=SURFACE_INTERACTIVE):
-    """Decide what, if anything, to say about one pending tool call.
+    """Assess a Claude-shaped event using a validated config.
 
-    `config` must come from load_config()/validate_config(): every documented
-    key is then guaranteed present, which is why this function indexes directly
-    rather than defending against shapes that cannot occur.
-
-    `reason is None` means stay out of the way entirely — no decision field, no
-    forced prompt, allowlist and native dialog exactly as if the plugin were not
-    installed.
-    """
+    Returns reason=None when no extra confirmation is requested. May read rule,
+    locale, cache and credential files, and call the optional model service."""
     analyzer = TOOL_ANALYZERS.get(event.get("tool_name"))
     if analyzer is None:  # uncovered tool -> never interfere
         return SILENT
@@ -124,11 +98,10 @@ def assess(event, config, surface=SURFACE_INTERACTIVE):
     if not asked:
         return Assessment(analysis.matches, False, None, "off")
 
-    # Tier 2 runs only for calls that will actually reach a dialog.
+    # Only request a model note when the assessment requests confirmation.
     tier2 = tier2_explanation(analysis.tier2_subject, config,
                               analysis.tier2_kind, event)
-    # detail_subject is the small, clean subject (command / URL / path) — never
-    # file contents, so the detail can't leak a file body onto the dialog.
+    # Target extraction receives a command, URL or path, without file contents.
     reason = render_reason(
         analysis.matches,
         lang=config["lang"],
@@ -140,18 +113,10 @@ def assess(event, config, surface=SURFACE_INTERACTIVE):
 
 
 def build_message(event, config=None, surface=SURFACE_INTERACTIVE):
-    """What an adapter should call: assess() plus the heartbeat.
-
-    The split matters. `assess` is pure and therefore easy to test, but the
-    heartbeat is what makes "is the plugin alive, and was this call actually
-    checked?" answerable — an adapter that called `assess` directly would work
-    while quietly giving up the observability the rest of the project leans on.
-    Returns the reason string, or None meaning print `{}` and stay out of it.
-    """
+    """Assess the event, record local status, and return a reason or None."""
     config = config if config is not None else load_config()
     verdict = assess(event, config, surface)
-    # Heartbeat last: it records "this call was checked" even when the answer is
-    # {}, and it carries the Tier 2 outcome.
+    # Record the check and model outcome even when there is no reason to display.
     record_heartbeat(event.get("tool_name"), verdict.matches, verdict.asked,
                      verdict.tier2_outcome)
     return verdict.reason

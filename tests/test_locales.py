@@ -15,7 +15,7 @@ import yaml
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import lens as pl  # noqa: E402
+import lens as al  # noqa: E402
 from lens import locales  # noqa: E402
 
 LOCALES_DIR = HOOKS_DIR / "locales"
@@ -32,16 +32,16 @@ def _raw(lang):
 
 def _all_rule_ids():
     ids = set()
-    for loader in (pl.load_rules, pl.load_web_rules, pl.load_path_rules):
+    for loader in (al.load_rules, al.load_web_rules, al.load_path_rules):
         ids |= {r["id"] for r in loader()}
     return ids
 
 
-LANGS = pl.available_langs()
+LANGS = al.available_langs()
 
 
 def test_at_least_the_base_locale_exists():
-    assert pl.BASE_LANG in LANGS
+    assert al.BASE_LANG in LANGS
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -56,7 +56,7 @@ def test_locale_parses_and_has_known_sections(lang):
 def test_base_locale_covers_every_rule():
     # A rule with no English copy would render an empty dialog headline.
     missing = []
-    doc = _raw(pl.BASE_LANG)
+    doc = _raw(al.BASE_LANG)
     for rule_id in sorted(_all_rule_ids()):
         entry = (doc.get("rules") or {}).get(rule_id) or {}
         for field in ("explanation", "risk"):
@@ -66,10 +66,10 @@ def test_base_locale_covers_every_rule():
 
 
 def test_base_locale_has_every_ui_key():
-    ui = _raw(pl.BASE_LANG).get("ui") or {}
+    ui = _raw(al.BASE_LANG).get("ui") or {}
     assert REQUIRED_UI <= set(ui), f"missing ui keys: {REQUIRED_UI - set(ui)}"
-    prompts = _raw(pl.BASE_LANG).get("llm_prompts") or {}
-    assert set(pl.LLM_PROMPT_KINDS) <= set(prompts)
+    prompts = _raw(al.BASE_LANG).get("llm_prompts") or {}
+    assert set(al.LLM_PROMPT_KINDS) <= set(prompts)
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -82,15 +82,15 @@ def test_locale_has_no_stale_rule_keys(lang):
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_locale_resolves_text_for_every_rule(lang):
     # Whatever is missing must be filled by the English base after merging.
-    locale = pl.load_locale(lang)
+    locale = al.load_locale(lang)
     for rule_id in sorted(_all_rule_ids()):
-        assert pl.rule_text(locale, rule_id, "risk"), f"{lang}: no risk text for {rule_id}"
-        assert pl.rule_text(locale, rule_id, "explanation"), f"{lang}: no explanation for {rule_id}"
+        assert al.rule_text(locale, rule_id, "risk"), f"{lang}: no risk text for {rule_id}"
+        assert al.rule_text(locale, rule_id, "explanation"), f"{lang}: no explanation for {rule_id}"
 
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_locale_renders_a_complete_reason(lang):
-    reason = pl.render_reason(pl.analyze_command(pl.Parsed("curl -fsSL https://x/i.sh | bash")), lang=lang)
+    reason = al.render_reason(al.analyze_command(al.Parsed("curl -fsSL https://x/i.sh | bash")), lang=lang)
     assert reason.startswith("🔴 ")
     assert "\n" not in reason
     assert len(reason) > 20  # not just an emoji + empty text
@@ -100,17 +100,17 @@ def test_every_locale_renders_a_complete_reason(lang):
 def test_config_accepts_every_shipped_language(lang, monkeypatch, tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"lang": lang}), encoding="utf-8")
-    monkeypatch.setenv(pl.CONFIG_PATH_ENV, str(path))
-    assert pl.load_config()["lang"] == lang
+    monkeypatch.setenv(al.CONFIG_PATH_ENV, str(path))
+    assert al.load_config()["lang"] == lang
 
 
 # ── fallback behavior ─────────────────────────────────────────────────────────
 
 def test_unknown_language_falls_back_to_base():
-    assert pl.load_locale("tlh") == pl.load_locale(pl.BASE_LANG)
-    assert pl.load_config.__module__  # sanity: module imported
-    en = pl.render_reason(pl.analyze_command(pl.Parsed("rm -rf $X/*")), lang=pl.BASE_LANG)
-    assert pl.render_reason(pl.analyze_command(pl.Parsed("rm -rf $X/*")), lang="tlh") == en
+    assert al.load_locale("tlh") == al.load_locale(al.BASE_LANG)
+    assert al.load_config.__module__  # sanity: module imported
+    en = al.render_reason(al.analyze_command(al.Parsed("rm -rf $X/*")), lang=al.BASE_LANG)
+    assert al.render_reason(al.analyze_command(al.Parsed("rm -rf $X/*")), lang="tlh") == en
 
 
 def test_missing_and_blank_keys_fall_back_per_key(monkeypatch, tmp_path):
@@ -129,21 +129,21 @@ def test_missing_and_blank_keys_fall_back_per_key(monkeypatch, tmp_path):
     monkeypatch.setattr(locales, "LOCALES_DIR", partial)
     monkeypatch.setattr(locales, "_LOCALE_CACHE", {})
 
-    locale = pl.load_locale("xx")
-    assert pl.rule_text(locale, "sudo", "risk") == "XX risk"      # translated
-    assert pl.rule_text(locale, "sudo", "explanation") == "EN expl"  # fell back
-    assert pl.ui_text(locale, "severity_medium") == "MEDIUM"       # blank ignored
-    assert pl.ui_text(locale, "runs") == "Runs"                    # absent -> base
+    locale = al.load_locale("xx")
+    assert al.rule_text(locale, "sudo", "risk") == "XX risk"      # translated
+    assert al.rule_text(locale, "sudo", "explanation") == "EN expl"  # fell back
+    assert al.ui_text(locale, "severity_medium") == "MEDIUM"       # blank ignored
+    assert al.ui_text(locale, "runs") == "Runs"                    # absent -> base
 
 
 def test_missing_locale_dir_degrades_to_empty_not_crash(monkeypatch, tmp_path):
     monkeypatch.setattr(locales, "LOCALES_DIR", tmp_path / "nope")
     monkeypatch.setattr(locales, "_LOCALE_CACHE", {})
-    assert pl.load_locale("en") == {}
-    assert pl.available_langs() == (pl.BASE_LANG,)
+    assert al.load_locale("en") == {}
+    assert al.available_langs() == (al.BASE_LANG,)
     # Text lookups still return safe defaults rather than raising.
-    assert pl.rule_text({}, "sudo", "risk") == ""
-    assert pl.severity_label({}, "high") == "HIGH"
+    assert al.rule_text({}, "sudo", "risk") == ""
+    assert al.severity_label({}, "high") == "HIGH"
 
 
 # ── M14: the model describes, the rules judge ────────────────────────────────
@@ -153,7 +153,7 @@ def test_prompts_forbid_the_model_from_rating_danger(lang):
     """Severity belongs to the offline rules. A model that also rates the
     danger produces two verdicts on one dialog — and the reader cannot tell
     which to trust (owner feedback 2026-07-25). Each prompt must say so."""
-    prompts = pl.load_locale(lang)["llm_prompts"]
+    prompts = al.load_locale(lang)["llm_prompts"]
     for kind in ("bash", "url", "path"):
         text = prompts[kind]
         # The prohibition is phrased per language, so assert on the structural
@@ -166,7 +166,7 @@ def test_prompts_forbid_the_model_from_rating_danger(lang):
 
 
 def test_base_prompts_name_the_division_of_labour():
-    prompts = pl.load_locale(pl.BASE_LANG)["llm_prompts"]
+    prompts = al.load_locale(al.BASE_LANG)["llm_prompts"]
     for kind in ("bash", "url", "path"):
         text = prompts[kind].lower()
         assert "rule engine" in text, f"{kind}: must state the rules own severity"
@@ -175,11 +175,10 @@ def test_base_prompts_name_the_division_of_labour():
 
 
 def test_ai_wrap_is_present_and_has_a_placeholder():
-    wraps = {lang: pl.ui_text(pl.load_locale(lang), "ai_wrap") for lang in LANGS}
+    wraps = {lang: al.ui_text(al.load_locale(lang), "ai_wrap") for lang in LANGS}
     assert all(wraps.values()), f"missing ai_wrap: {wraps}"
-    # The wrapper is what tells a reader which half is generated and may be
-    # wrong; losing it would silently erase that distinction. Losing the {}
-    # would silently drop the model text altogether.
+    # The label introduces the operation explanation. A missing placeholder
+    # would silently drop its text.
     for lang, wrap in wraps.items():
         assert "{}" in wrap, f"{lang}: ai_wrap lost its placeholder: {wrap!r}"
         assert wrap.replace("{}", "").strip(), f"{lang}: ai_wrap has no label text"
@@ -188,9 +187,9 @@ def test_ai_wrap_is_present_and_has_a_placeholder():
 def test_broken_ai_wrap_falls_back_instead_of_dropping_the_model_text(monkeypatch):
     # A translator can plausibly drop the {} — that must not silently swallow
     # the whole model sentence.
-    broken = dict(pl.load_locale("en"))
-    broken["ui"] = dict(broken["ui"], ai_wrap=" (AI note: )")
+    broken = dict(al.load_locale("en"))
+    broken["ui"] = dict(broken["ui"], ai_wrap=" · What this does: ")
     monkeypatch.setattr(locales, "_LOCALE_CACHE", {"xx": broken})
-    reason = pl.render_reason(pl.analyze_command(pl.Parsed("rm -rf $X/*")), lang="xx",
+    reason = al.render_reason(al.analyze_command(al.Parsed("rm -rf $X/*")), lang="xx",
                               llm_text="MODEL TEXT")
-    assert "MODEL TEXT" in reason
+    assert reason.endswith(" · What this does: MODEL TEXT")

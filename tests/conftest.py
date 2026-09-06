@@ -1,4 +1,4 @@
-"""Shared pytest fixtures / path setup for the Permission Lens test suite."""
+"""Shared pytest fixtures / path setup for the Approval Lens test suite."""
 import sys
 from pathlib import Path
 
@@ -9,10 +9,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "hooks"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 
-# Make hooks/permission_lens.py importable as `permission_lens`.
+# Make hooks/approval_lens.py importable as `approval_lens`.
 sys.path.insert(0, str(HOOKS_DIR))
 
-import lens as pl  # noqa: E402
+import lens as al  # noqa: E402
 
 
 def config(**raw):
@@ -23,7 +23,7 @@ def config(**raw):
     key the module then required. _validate_config is the single constructor,
     so tests exercise exactly the shape production sees.
     """
-    return pl.validate_config(raw)
+    return al.validate_config(raw)
 
 
 def llm_config(**overrides):
@@ -40,7 +40,7 @@ def _hermetic_cache(monkeypatch, tmp_path):
     # Keep every best-effort cache write (LLM cache, heartbeat) out of the real
     # ~/.cache — in-process build_message calls would otherwise touch it.
     # Tests that need a specific cache dir simply monkeypatch over this.
-    monkeypatch.setenv("PERMISSION_LENS_CACHE_DIR", str(tmp_path / "pl-cache"))
+    monkeypatch.setenv("APPROVAL_LENS_CACHE_DIR", str(tmp_path / "al-cache"))
 
 
 def _load_corpus(name):

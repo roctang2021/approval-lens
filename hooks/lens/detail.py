@@ -1,7 +1,4 @@
-"""The concrete fact a rule names on the dialog.
-
-Rule copy describes a CATEGORY of risk; these pull the specific target out of
-the command itself — offline, no model, no network, no privacy cost."""
+"""Extract the matching action's target for the explanation, without network access."""
 import re
 
 import traceback
@@ -9,35 +6,25 @@ from .parsing import Parsed
 from .predicates import _rm_commands, _rm_targets
 from .util import log_debug, one_line
 
-# ── detail extraction ─────────────────────────────────────────────────────────
-#
-# Rule copy describes a CATEGORY of risk ("downloads a script and runs it").
-# The dialog is far more useful when it also names the concrete thing at hand
-# ("from get.docker.com" vs "from a1b2c3.xyz"). Extractors pull that fact out
-# of the command itself: offline, no model, no network, no privacy cost. A rule
-# opts in via `detail: <name>` in rules*.yaml; anything that can't be resolved
-# just yields nothing and the reason renders exactly as before.
+# Rules opt into a named extractor with detail: <name>. Missing targets
+# produce an empty string; extraction does not resolve remote resources.
 
 _URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][\w+.-]*://(?:[^/@?#\s]*@)?([^/:?#\s]+)")
-# `of=` is the DESTINATION — the thing that gets overwritten. Naming the `if=`
-# source instead would point at the harmless half of `dd if=/dev/zero of=/dev/disk2`.
+# For dd, identify the of= destination rather than the if= source.
 _DD_TARGET_RE = re.compile(r"\bof=(\S+)")
-# Hyphens and dots are ordinary in device paths — /dev/mapper/vg-root,
-# /dev/disk/by-id/ata-Samsung_SSD, /dev/nvme0n1p2. Leaving them out of the
-# class silently truncated the target shown on the dialog, which is worse than
-# showing none: the reader would check the wrong device.
+# Device paths can contain hyphens and dots, such as /dev/mapper/vg-root.
 _DEVICE_RE = re.compile(r"(/dev/[\w./-]+)")
 _DETAIL_MAX = 48
 
 
 def _detail_url_host(parsed, subject):
-    """Host of the first URL in the command — who the code/data comes from."""
+    """Host of the first URL in the matching subject."""
     m = _URL_IN_TEXT_RE.search(subject or "")
     return m.group(1) if m else ""
 
 
 def _detail_rm_target(parsed, subject):
-    """What an rm -r would actually delete."""
+    """Parsed rm targets, without expanding variables or globs."""
     for sc in _rm_commands(parsed or Parsed(subject or "")):
         targets = _rm_targets(sc)
         if targets:
@@ -69,6 +56,10 @@ def extract_detail(rule, parsed, subject):
     fn = DETAIL_EXTRACTORS.get(rule.get("detail") or "")
     if not fn:
         return ""
+    if "_match_subject" in rule:
+        # The analyzer chose this subject when the rule fired. Starting again
+        # from the whole command can name a harmless earlier stage's target.
+        subject, parsed = rule["_match_subject"], None
     try:
         value = one_line(str(fn(parsed, subject) or ""))
     except Exception:

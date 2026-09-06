@@ -1,59 +1,37 @@
-# Probe: PreToolUse `"ask"` — where does the reason render?
+# Claude PreToolUse rendering probe
 
-## Question
+This standalone hook always returns `ask` with a two-line marker. Use it to
+check where a host version displays `permissionDecisionReason` and whether it
+preserves line breaks. It is not part of the installed plugin.
 
-The PermissionRequest `systemMessage` route is dead on Desktop (verified
-2026-07-19, see NOTES.md § "systemMessage rendering"). The remaining candidate
-surface is the **PreToolUse** hook's `permissionDecision: "ask"`:
+The probe logs complete input and output to
+`~/.cache/approval-lens/probe-ask.log`. Use only test data: tool inputs can
+contain credentials. An ask can fail a call in a headless session.
 
-- Docs (hooks § PreToolUse decision control): for `"allow"` and `"ask"`,
-  `permissionDecisionReason` is *"shown to the user but not Claude"* — but the
-  docs don't say **where** (dialog vs transcript).
-- Docs also say an `"ask"` prompt carries an origin label (`[Project]`,
-  `[Plugin]`, …), and CHANGELOG 2.1.211 says a hook `ask` "floors the decision
-  at a prompt" — i.e. it forces a dialog even for otherwise auto-allowed calls.
+## Run in a scratch project
 
-If the reason renders on the dialog, Permission Lens can move its annotation
-there (severity-gated, still never allow/deny). This probe answers that with
-the same instrumented-hook method as the systemMessage probe.
+Create a new project directory and add `.claude/settings.json` with:
 
-## Setup (scratch project — plugin and global settings untouched)
-
-```bash
-D=~/Code/oss/pl-ask-probe   # somewhere Finder can see — /tmp is hidden from GUI pickers
-mkdir -p "$D/.claude"
-cat > "$D/.claude/settings.json" <<EOF
+```json
 {
   "hooks": {
-    "PreToolUse": [
-      { "matcher": "Bash|WebFetch", "hooks": [
-        { "type": "command",
-          "command": "python3 $HOME/Code/oss/permission-lens/scripts/probe-pretooluse-ask/probe.py",
-          "timeout": 10 } ] }
-    ]
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 \"/ABSOLUTE/PATH/approval-lens/scripts/probe-pretooluse-ask/probe.py\"",
+        "timeout": 10
+      }]
+    }]
   }
 }
-EOF
-echo "$D"
 ```
 
-Open `$D` as a project in the Desktop app (approve the project-hook trust
-prompt), then ask Claude to run `ls -la`. Repeat once in a terminal `claude`
-session in `$D` — last time the CLI never fired the *plugin* hook, so a
-settings-registered hook is a useful second data point.
+Replace the path, open that project in Claude Code and ask it to run `ls -la`.
+Record the host version and surface, marker location, line breaks, approval
+options and whether the log contains the invocation. Repeat in an interactive
+CLI session if comparing surfaces. Past results are in the
+[archive](../../docs/history/engineering-notes.md).
 
-## Record in NOTES.md (§ Empirical results)
-
-1. Marker text: on the dialog itself, near it, transcript only, or nowhere?
-   Both lines (multi-line), or collapsed to one?
-2. Origin label (`[Project]`/`[Local]`) shown?
-3. Native Allow / Deny both still work?
-4. Floors-at-a-prompt: click "always allow" for `ls`, run it again — does the
-   dialog still appear (with the marker)?
-5. `~/.cache/permission-lens/probe-ask.log` has an `IN:`/`OUT:` pair per
-   invocation (proof of firing even if nothing renders); CLI vs Desktop both?
-
-## Cleanup
-
-Delete the scratch dir (`rm -rf $D`) and, if you're done probing, the log:
-`rm -f ~/.cache/permission-lens/probe-ask.log`.
+Remove this hook from the scratch settings when finished. Delete the probe log
+when you no longer need the recorded input.

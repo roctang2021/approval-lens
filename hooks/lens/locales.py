@@ -1,8 +1,4 @@
-"""User-visible text, one file per language.
-
-`en` is the base: every other locale is merged over it per key, so a partial or
-blank translation degrades string by string instead of breaking. Adding a
-language is adding one file, no code."""
+"""Localized rule and UI text with per-key English fallback."""
 import traceback
 from .util import log_debug
 from .paths import LOCALES_DIR
@@ -15,12 +11,7 @@ except Exception:  # pragma: no cover - exercised only when pyyaml is missing
 BASE_LANG = "en"
 _LOCALE_CACHE = {}
 
-# ── locales ───────────────────────────────────────────────────────────────────
-#
-# All user-visible text lives in locales/<lang>.yaml, keyed by rule id (plus
-# ui/verbs/llm_prompts/status sections). `en` is the base: every other locale is
-# merged over it per key, so a partial or blank translation degrades string by
-# string instead of breaking. Adding a language = adding one file, no code.
+# Merge translations over English so missing or blank strings fall back.
 
 
 def available_langs():
@@ -33,6 +24,7 @@ def available_langs():
     try:
         langs = {p.stem for p in LOCALES_DIR.glob("*.yaml")}
     except Exception:
+        log_debug("locales dir %s unreadable: %s" % (LOCALES_DIR, traceback.format_exc()))
         langs = set()
     langs.add(BASE_LANG)
     return tuple(sorted(langs))
@@ -40,6 +32,7 @@ def available_langs():
 
 def _read_locale(lang):
     if yaml is None:
+        log_debug("locales: PyYAML unavailable, %s renders built-in defaults" % lang)
         return {}
     try:
         with open(LOCALES_DIR / f"{lang}.yaml", "r", encoding="utf-8") as fh:

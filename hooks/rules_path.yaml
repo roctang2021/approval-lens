@@ -1,15 +1,9 @@
-# Permission Lens — Tier 1 rule data for the Write and Edit tools.
-#
-# Same rule shape as rules.yaml. `field` selects what the regex matches:
-#   path    (default) — the target file_path (normalized: ~ expanded)
-#   content           — the written content (Write) or new_string (Edit)
-# Path patterns use substring anchors like `(^|/)` so they match whether the
-# path is absolute (/Users/x/.ssh/id_rsa) or ~-relative (.ssh/id_rsa).
-# Matching logic only — user-visible text lives in hooks/locales/<lang>.yaml
-# under `rules.<id>` (see rules.yaml's header).
+# Match file paths (with ~ expanded), or supplied content/new_string.
+# Patterns can also match inactive copies and plain documentation text.
+# Text lives in locales/<lang>.yaml.
 
 rules:
-  # ── credential / secret files ─────────────────────────────────────────────
+  # credential / secret files
   - id: path-ssh
     category: credential-access
     severity: high
@@ -22,13 +16,19 @@ rules:
     regex: "(^|/)\\.aws/"
     detail: path
 
+  - id: path-cred-files
+    category: credential-access
+    severity: medium
+    regex: "(^|/)\\.(netrc|npmrc|pypirc|git-credentials)$|(^|/)\\.(kube|gnupg)/|(^|/)\\.docker/config\\.json$|(^|/)\\.config/gh/hosts\\.yml$"
+    detail: path
+
   - id: path-dotenv
     category: credential-access
     severity: medium
     regex: "(^|/)\\.env(\\.[\\w.-]+)?$"
     detail: path
 
-  # ── persistence / auto-run ────────────────────────────────────────────────
+  # persistence / auto-run
   - id: path-shell-rc
     category: persistence
     severity: medium
@@ -59,7 +59,7 @@ rules:
     regex: "(^|/)(crontab$|cron\\.d/|etc/cron)"
     detail: path
 
-  # ── privileged / system ───────────────────────────────────────────────────
+  # privileged / system
   - id: path-sudoers
     category: privilege
     severity: high
@@ -72,7 +72,7 @@ rules:
     regex: "^/etc/"
     detail: path
 
-  # ── content injection (Edit new_string / Write content) ───────────────────
+  # content injection (Edit new_string / Write content)
   - id: content-remote-exec
     category: remote-exec
     severity: high

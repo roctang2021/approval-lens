@@ -1,32 +1,10 @@
-# Permission Lens — Tier 1 rule data.
-#
-# Each rule:
-#   id            unique kebab-case identifier
-#   category      one of the brief's risk categories (grouping only)
-#   severity      low | medium | high
-#   regex         a Python regex matched against the command (see `scope`)
-#                 OR
-#   predicate     name of a predicate function in permission_lens.py PREDICATES
-#   scope         whole (default) = match full command string
-#                 segment         = match any single pipeline stage
-#                 (ignored for predicate rules)
-#   verb          OPTIONAL guard: the program this rule is about. The rule can
-#                 only fire if some pipeline stage actually RUNS it (fullmatched
-#                 against the stage's verb; wrapper stages like `sudo …` are
-#                 scanned in full). Without it a regex on the raw command text
-#                 cannot tell `curl x | bash` from `echo "curl x | bash"`.
-#                 Add one to every rule anchored on a specific program.
-#
-# This file holds MATCHING LOGIC ONLY. The user-visible text for each rule
-# lives in hooks/locales/<lang>.yaml under `rules.<id>` — adding a rule here
-# means adding its `explanation`/`risk` to locales/en.yaml (enforced by
-# tests/test_locales.py).
-#
-# Rules are ordered by category for readability; the analyzer sorts matches by
-# severity at format time, so file order does not affect output.
+# Bash matching rules. DSL reference: CONTRIBUTING.md.
+# Guard conditions apply to each matching stage, including nested shell source.
+# User-facing text lives in locales/<lang>.yaml under rules.<id>.
+# Equal-severity matches retain file order, which can affect the headline.
 
 rules:
-  # ── destructive filesystem ────────────────────────────────────────────────
+  # destructive filesystem
   - id: rm-rf-risky-target
     category: destructive-fs
     severity: high
@@ -42,9 +20,7 @@ rules:
   - id: dd-to-device
     category: destructive-fs
     severity: high
-    # /dev/null, /dev/zero and friends are not storage — `dd of=/dev/null`
-    # is the canonical harmless no-op. Flagging it 🔴 spends the credibility
-    # that the red badge needs in order to mean anything.
+    # Exclude pseudo-devices: writing /dev/null does not overwrite storage.
     regex: '\bdd\b[^|;&]*\bof=/dev/(?!null\b|zero\b|u?random\b|std(in|out|err)\b|tty|full\b)'
     detail: device
     verb: 'dd'
@@ -62,6 +38,14 @@ rules:
     regex: '\bshred\b'
     verb: 'shred'
 
+  # Match device redirection without requiring a dd command.
+  - id: redirect-to-device
+    category: destructive-fs
+    severity: high
+    regex: '^/dev/(?!null$|zero$|u?random$|std(in|out|err)$|tty|full$|fd(/|$))'
+    scope: redirect
+    detail: device
+
   - id: chmod-chown-recursive
     category: destructive-fs
     severity: medium
@@ -74,29 +58,32 @@ rules:
     regex: '\bchmod\b[^|;&]*\b(777|a\+w|o\+w)\b'
     verb: 'chmod'
 
-  # ── remote code execution ─────────────────────────────────────────────────
+  # remote code execution
   - id: pipe-to-shell
     category: remote-exec
     severity: high
-    regex: '\b(curl|wget|fetch)\b.*\|&?\s*(sudo\s+)?(bash|sh|zsh|dash|ksh|fish)(\s|$)'
+    scope: pipeline
+    pipe_to: 'bash|sh|zsh|dash|ksh|fish'
     detail: url_host
     verb: 'curl|wget|fetch'
 
   - id: shell-from-process-sub
     category: remote-exec
     severity: high
-    regex: '\b(bash|sh|zsh|dash|ksh)\b\s*<\(\s*(curl|wget|fetch)\b'
+    scope: process
+    pipe_to: 'bash|sh|zsh|dash|ksh'
     detail: url_host
     verb: 'curl|wget|fetch'
 
   - id: curl-pipe-interpreter
     category: remote-exec
     severity: high
-    regex: '\b(curl|wget|fetch)\b.*\|&?\s*(sudo\s+)?(python[0-9.]*|perl|ruby|node|php)(\s|$)'
+    scope: pipeline
+    pipe_to: 'python[0-9.]*|perl|ruby|node|php'
     detail: url_host
     verb: 'curl|wget|fetch'
 
-  # ── data exfiltration ─────────────────────────────────────────────────────
+  # data exfiltration
   - id: curl-upload-file
     category: exfiltration
     severity: high
@@ -107,7 +94,10 @@ rules:
   - id: file-piped-to-network
     category: exfiltration
     severity: high
-    regex: '\b(cat|tar|zip|gzip|dd|head|tail)\b[^|;&]*\|&?\s*(curl|wget|nc|ncat|netcat|socat)\b'
+    # ssh is a network sink too: `tar czf - ~ | ssh host 'cat > home.tgz'`
+    # ships the home directory exactly as `| curl -T -` would.
+    scope: pipeline
+    pipe_to: 'curl|wget|nc|ncat|netcat|socat|ssh'
     detail: url_host
     verb: 'cat|tar|zip|gzip|dd|head|tail'
 
@@ -117,10 +107,7 @@ rules:
     regex: '\b(nc|ncat|netcat)\b[^|;&]*<\s*\S'
     verb: 'nc|ncat|netcat'
 
-  # ── credential access ─────────────────────────────────────────────────────
-  # scope argv + not_verb: these fire on a path SHAPE, which used to be found
-  # anywhere in the raw text — inside a commit message, inside an echo. A path
-  # is an argument to something, and printing it is not touching it.
+  # Credential paths: use argument scope and exclude common display commands.
   - id: ssh-key-access
     category: credential-access
     severity: medium
@@ -135,8 +122,7 @@ rules:
     scope: argv
     not_verb: 'echo|printf'
 
-  # Anchored to the whole token now, not to surrounding whitespace: the old
-  # form matched `.env` inside `git commit -m "fix .env loading"`.
+  # Match the whole argument to reduce matches inside quoted prose.
   - id: dotenv-access
     category: credential-access
     severity: low
@@ -144,10 +130,8 @@ rules:
     scope: argv
     not_verb: 'echo|printf'
 
-  # Split by whether the secret itself is printed: `dump-keychain` empties the
-  # whole keychain, and -w/-g make a lookup print the password. A plain lookup
-  # of one named item returns metadata only — flagging it 🔴 was a false alarm
-  # (found 2026-07-25 when the Tier 2 line contradicted the rule and was right).
+  # dump-keychain exports entries; -d exposes decrypted data. Lookup -w/-g
+  # prints passwords, while a plain lookup returns metadata.
   - id: macos-keychain-dump
     category: credential-access
     severity: high
@@ -166,6 +150,14 @@ rules:
     regex: '\b(secret-tool|gnome-keyring-daemon|kwalletcli)\b'
     verb: 'secret-tool|gnome-keyring-daemon|kwalletcli'
 
+  # Paths that may contain saved logins, keys or configuration.
+  - id: cred-file-access
+    category: credential-access
+    severity: medium
+    regex: '(^|/)\.(netrc|npmrc|pypirc|git-credentials)$|(^|/)\.(kube|gnupg)/|(^|/)\.docker/config\.json$|(^|/)\.config/gh/hosts\.yml$'
+    scope: argv
+    not_verb: 'echo|printf'
+
   - id: shell-history-access
     category: credential-access
     severity: medium
@@ -173,28 +165,32 @@ rules:
     scope: argv
     not_verb: 'echo|printf'
 
-  # ── obfuscation ───────────────────────────────────────────────────────────
+  # obfuscation
   - id: base64-decode-exec
     category: obfuscation
     severity: high
-    regex: '\bbase64\b[^|]*(-d|--decode|-D)\b[^|]*\|&?\s*(sudo\s+)?(bash|sh|zsh|python[0-9.]*|perl|ruby|node)\b'
+    scope: pipeline
+    pipe_to: 'bash|sh|zsh|python[0-9.]*|perl|ruby|node'
+    regex: '\bbase64\b[^|]*(-d|--decode|-D)\b'
     detail: url_host
     verb: 'base64'
 
   - id: hex-decode-exec
     category: obfuscation
     severity: high
-    regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)[^|]*\|&?\s*(bash|sh|zsh|python[0-9.]*)\b'
+    scope: pipeline
+    pipe_to: 'bash|sh|zsh|python[0-9.]*'
+    regex: '\b(xxd\s+-r|xxd\s+-p\s+-r|od\b.*|printf\b.*\\x)'
     detail: url_host
     verb: 'xxd|od|printf'
 
   - id: eval-dynamic
     category: obfuscation
     severity: medium
-    regex: '(^|[\s;&|(`])eval\s+[''"$`]'
+    regex: '\beval\s+\S'
     verb: 'eval'
 
-  # ── privilege escalation ──────────────────────────────────────────────────
+  # privilege escalation
   - id: sudo
     category: privilege
     severity: medium
@@ -207,11 +203,19 @@ rules:
     regex: '(^|[\s;&|(])su\s+[-\w]'
     verb: 'su'
 
-  # ── dangerous git ─────────────────────────────────────────────────────────
+  # Flag access to elevated capabilities, the host root or host PID namespace.
+  - id: docker-privileged
+    category: privilege
+    severity: medium
+    regex: '\bdocker\b[^;&|]*\brun\b[^;&|]*(--privileged\b|\s(-v|--volume)[=\s]+/:|--pid[=\s]+host\b)'
+    verb: 'docker'
+
+  # dangerous git
   - id: git-push-force
     category: git-dangerous
     severity: medium
-    regex: '\bgit\b[^;&|]*\bpush\b[^;&|]*(--force(?!-with-lease)\b|\s-f\b)'
+    # `+refspec` is a force push spelled without the flag: `git push origin +main`.
+    regex: '\bgit\b[^;&|]*\bpush\b[^;&|]*(--force(?!-with-lease)\b|\s-f\b|\s\+[^\s+-]\S*)'
     verb: 'git'
 
   - id: git-reset-hard
@@ -232,7 +236,7 @@ rules:
     regex: '\bgit\b[^;&|]*\bremote\b[^;&|]*\b(set-url|add)\b'
     verb: 'git'
 
-  # ── publishing / irreversible ─────────────────────────────────────────────
+  # publishing / irreversible
   - id: npm-publish
     category: publish-irreversible
     severity: medium
@@ -260,7 +264,20 @@ rules:
     # aws spells it --dryrun, gcloud/az --dry-run. Neither transfers anything.
     without_flags: ['--dryrun', '--dry-run']
 
-  # ── persistence / system modification ─────────────────────────────────────
+  - id: k8s-delete
+    category: publish-irreversible
+    severity: medium
+    regex: '\b(kubectl|helm)\b[^;&|]*\b(delete|uninstall)\b'
+    verb: 'kubectl|helm'
+    without_flags: ['--dry-run']
+
+  - id: gh-repo-delete
+    category: publish-irreversible
+    severity: high
+    regex: '\bgh\s+repo\s+delete\b'
+    verb: 'gh'
+
+  # persistence / system modification
   - id: crontab-modify
     category: persistence
     severity: medium

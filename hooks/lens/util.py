@@ -1,19 +1,21 @@
-"""Small helpers used across layers.
-
-`_log_debug` gates on PERMISSION_LENS_DEBUG internally so that adding a trace to
-a swallowed exception costs one line — silently discarded failures cost this
-project hours more than once."""
+"""Whitespace, cache path and opt-in debug logging helpers."""
 import os
+import unicodedata
 from pathlib import Path
 
-CACHE_DIR_ENV = "PERMISSION_LENS_CACHE_DIR"   # test/debug override for the cache dir
-DEFAULT_CACHE_DIR = "~/.cache/permission-lens"
-DEBUG_ENV = "PERMISSION_LENS_DEBUG"
+CACHE_DIR_ENV = "APPROVAL_LENS_CACHE_DIR"   # test/debug override for the cache dir
+DEFAULT_CACHE_DIR = "~/.cache/approval-lens"
+DEBUG_ENV = "APPROVAL_LENS_DEBUG"
+_BIDI_CONTROLS = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 
 def one_line(text):
-    """Collapse whitespace/newlines so the dialog gets a single tidy line."""
-    return " ".join(text.split())
+    """Collapse whitespace and make terminal/bidi controls visible as escapes."""
+    return "".join(
+        f"\\u{ord(char):04x}"
+        if unicodedata.category(char) == "Cc" or char in _BIDI_CONTROLS else char
+        for char in " ".join(text.split())
+    )
 
 
 def cache_dir():
@@ -21,7 +23,7 @@ def cache_dir():
 
 
 def log_debug(text):
-    """Append to the debug log when PERMISSION_LENS_DEBUG is set; else nothing."""
+    """Append to the debug log when APPROVAL_LENS_DEBUG is set; else nothing."""
     if not os.environ.get(DEBUG_ENV):
         return
     try:

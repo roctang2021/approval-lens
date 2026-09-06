@@ -1,5 +1,5 @@
 {
-  "description": "Permission Lens — puts a plain-language risk explanation on the permission dialog for risky Bash/WebFetch/Write/Edit calls (permissionDecision \"ask\" + reason). Never returns allow/deny; below the ask threshold it prints {} and native behavior is untouched.",
+  "description": "Understand what Claude Code is about to do before you approve it, with plain-language explanations of the action and its effects.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'command -v uv >/dev/null 2>&1 || PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; uv run --quiet \"${CLAUDE_PLUGIN_ROOT}\"/hooks/permission_lens.py' || true",
+            "command": "sh -c 'command -v uv >/dev/null 2>&1 || PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; uv run --quiet \"${CLAUDE_PLUGIN_ROOT}\"/hooks/approval_lens.py' || true",
             "timeout": 10
           }
         ]

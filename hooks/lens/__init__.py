@@ -1,12 +1,7 @@
-"""Permission Lens — the host-independent engine.
+"""Approval Lens engine exports, currently used by the Claude Code adapter.
 
-`assess(event, config, surface)` is the whole product as a function. Everything
-here is portable Python; anything that knows about a specific coding agent
-lives in that agent's adapter (see hooks/permission_lens.py for Claude Code).
-
-Submodules are importable directly (`from lens import tier2`) for tests and
-tools that need internals; the names below are the supported surface.
-"""
+Tool inputs and transcript lookup still have Claude dependencies. See
+docs/architecture.md before adding another host adapter."""
 from .config import (CONFIG_PATH_ENV, DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, LANG,
                      MAX_MESSAGE_CHARS, load_config, validate_config)
 from .core import (Analysis, Assessment, SURFACE_HEADLESS, SURFACE_INTERACTIVE,
@@ -24,7 +19,7 @@ from .render import PART_SEP, passes_threshold, render_reason
 from .rules import (analyze_command, load_path_rules, load_rules, load_web_rules,
                     match_string_rules)
 from .tier2 import (LLM_API_URL, LLM_API_VERSION, LLM_MAX_COMMAND_CHARS,
-                    LLM_OAUTH_BETA, LLM_PROMPT_KINDS, TIER2_OUTCOMES, Tier2Result,
+                    LLM_PROMPT_KINDS, TIER2_OUTCOMES, Tier2Result,
                     is_safety_verdict, tier2_explanation)
 from .util import CACHE_DIR_ENV, cache_dir, one_line
 
@@ -40,7 +35,7 @@ __all__ = [
     "SEVERITY_ORDER", "SEVERITY_EMOJI", "INFO_EMOJI", "BASE_LANG",
     "HOOKS_DIR", "LOCALES_DIR", "task_context", "TASK_CONTEXT_MAX_CHARS",
     "tier2_explanation", "Tier2Result", "TIER2_OUTCOMES", "is_safety_verdict",
-    "LLM_API_URL", "LLM_API_VERSION", "LLM_OAUTH_BETA", "LLM_PROMPT_KINDS",
+    "LLM_API_URL", "LLM_API_VERSION", "LLM_PROMPT_KINDS",
     "LLM_MAX_COMMAND_CHARS",
     "record_heartbeat", "plugin_version", "HEARTBEAT_FILE",
     "cache_dir", "one_line", "CACHE_DIR_ENV",

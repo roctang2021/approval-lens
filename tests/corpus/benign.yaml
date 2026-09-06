@@ -76,4 +76,24 @@ commands:
     clean: true
   - command: 'cat README.md | grep terraform'
     clean: true
+  # ── neighbours of the rules added 2026-09-04: same programs, harmless forms.
+  - command: "echo done > /dev/null"
+    clean: true
+  - command: "docker run --rm -v ./data:/data -p 8080:80 app:latest"
+    clean: true
+  - command: "kubectl delete pod web-1 --dry-run=client"
+    clean: true
+  - command: "helm list -A"
+    clean: true
+  - command: "gh repo view acme/api"
+    clean: true
+  - command: "git push origin main"
+    clean: true
+  - command: "cat ~/.npmrc.example"
+    clean: true
+  # ── a string handed to a shell is analyzed; a harmless one stays harmless.
+  - command: "bash -c 'echo hello'"
+    clean: true
+  - command: 'sh -c "ls -la"'
+    clean: true
 
