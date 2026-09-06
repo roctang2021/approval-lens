@@ -90,8 +90,12 @@ guarantee acceptance or an Anthropic Verified badge.
 
 Individual authors can submit through the
 [Console form](https://platform.claude.com/plugins/submit) with a Developer,
-Admin or Owner role in a Console organization. This repository has not yet
-been submitted to the official directory.
+Admin or Owner role in a Console organization.
+
+Approval Lens 0.29.1 was submitted through Console on 2026-09-05 for Claude Code.
+The confirmation page reported "Plugin submitted for review", and the submission
+list showed "Submitted and pending review". It is awaiting Anthropic's review;
+this is not confirmation of a directory listing.
 
 ## Scope to retain in release copy
 
