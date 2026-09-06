@@ -1,9 +1,9 @@
-# Release review — 0.29.0 candidate
+# Release review — 0.29.1
 
 Reviewed 2026-09-05. Source is public at
 [roctang2021/approval-lens](https://github.com/roctang2021/approval-lens).
-Live acceptance is still incomplete. The checks below track product verification;
-they are separate from Anthropic's plugin-directory review.
+Interactive CLI and live model checks are recorded below. These product checks
+are separate from Anthropic's plugin-directory review.
 
 ## Fixed in this review
 
@@ -41,20 +41,41 @@ Environment: macOS arm64, Claude Code 2.1.233, uv 0.11.7, Python 3.13.
 - The complete source, including archived notes, had no matches for the checked
   common Anthropic/GitHub token or private-key formats. This was a pattern scan.
 
-These checks establish installation and hook output behavior. They do not prove
-that a native dialog was displayed or that a live model explanation was useful.
-Model requests in automated tests were mocked; no live model API calls were made.
+The automated tests use mocked model requests. The following checks used real
+Claude Code sessions and the Anthropic API.
 
-## Remaining acceptance
+## Live acceptance completed
 
-Follow the [live checklist](../scripts/manual-test.md) on the intended Claude
-surfaces: verify readable reasons and approval/rejection in manual and Auto
-modes, then exercise a real model request, locale selection and fallback.
-Record host version, observed text and waiting time. The README's disk-writing
-example is an illustration, not captured model output.
+Tested on macOS with Claude Code 2.1.233, using a temporary workspace and plugin
+configuration. Interactive terminal prompts were observed through a PTY.
 
-Before declaring a stable release, complete these checks and record the results.
-This is the project's quality recommendation, not a directory submission rule.
+| Check | Observed result |
+| --- | --- |
+| Install `roctang2021/approval-lens` as a GitHub marketplace in an isolated profile | Version 0.29.0 installed and enabled; the test copy was uninstalled |
+| Manual mode, English, model off | Rule explanation and target appeared; No stopped the action, Yes ran the requested probe |
+| Routine `ls -la` in manual mode | Ran without an Approval Lens confirmation |
+| Auto mode, Chinese, model enabled without a key | Chinese rule explanation appeared; No stopped the action, Yes ran the probe; status recorded `no_credential` |
+| Auto mode, English, 0.29.1 with a live API key | The real prompt included the model explanation after `What this does`; No stopped the action |
+| Six languages, device-write text analyzed through the full hook | All returned model notes; the final six calls took 1.70–3.10 seconds each and none was truncated |
+| URL and file-path model notes | URL note omitted the dummy password; path-only note stated that changes were unknown; opting in to dummy file content described the supplied change |
+| API rejection and a 0.1-second deadline | Both retained the local explanation and returned `ask`; observed hook times were 0.23 and 0.17 seconds |
+
+Live execution probes used a reserved `.invalid` hostname. Approved attempts
+failed DNS resolution and supplied no script to execute. Device-write examples
+were passed only as JSON text to the analyzer; no disk-writing command ran.
+After one denial, Claude declined a repeat request before calling the hook;
+that attempt was excluded, and the separate approval case used another
+reserved hostname.
+
+The first model pass exposed excessive length, overstated disk erasure/recovery
+claims and a guessed identity from a file path. Version 0.29.1 narrows prompts to
+one sentence and supported effects. The final reviewed samples corrected those
+issues. This does not guarantee all future model responses will be accurate.
+
+The remaining UI coverage is Claude Desktop and IDE surfaces. They have not been
+manually checked. These results cover the interactive CLI; use the
+[live checklist](../scripts/manual-test.md) when adding another surface. The
+README's disk-writing example remains an illustration.
 
 ## Official directory submission
 

@@ -163,4 +163,4 @@ uv run scripts/approval-lens-status.py   # 最近检查、当天计数和模型�
 [更新与卸载](docs/configuration.zh.md#更新与卸载) ·
 [贡献指南](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [工程记录](NOTES.md)
 
-MIT · [许可证](LICENSE)
+MIT · [许可证](LICENSE) · [隐私说明](PRIVACY.md) · [安全问题报告](SECURITY.md)

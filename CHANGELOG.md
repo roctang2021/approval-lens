@@ -3,7 +3,15 @@
 User-visible changes by version. Investigation details are in the
 [engineering archive](docs/history/engineering-notes.md).
 
-## 0.29.0 (unreleased)
+## 0.29.1 (2026-09-05)
+
+- Shortened model explanations after live testing found truncated text and
+  unsupported claims about complete disk erasure and recovery. Prompts now
+  request one sentence and an accurate description of the affected area. Path
+  explanations no longer infer an owner or environment from the path alone.
+- Added a privacy notice and a private security reporting channel.
+
+## 0.29.0 (2026-09-05, source preview)
 
 - Renamed the project from Permission Lens to Approval Lens before public
   distribution. Plugin IDs, script names, settings/cache paths and environment

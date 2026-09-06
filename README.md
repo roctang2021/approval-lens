@@ -190,4 +190,4 @@ uv run scripts/approval-lens-status.py   # Last check, daily counts and model-no
 [Updates and removal](docs/configuration.md#updates-and-removal) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Engineering records](NOTES.md)
 
-MIT · [License](LICENSE)
+MIT · [License](LICENSE) · [Privacy](PRIVACY.md) · [Security reports](SECURITY.md)
