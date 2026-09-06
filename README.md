@@ -90,7 +90,7 @@ usual `claude` command. No model API key is needed for the local rules.
 1. Close any running Claude Code session and start `claude` in the project you
    want to work on.
 2. Enter `/plugin`, open **Installed**, and confirm Approval Lens is enabled.
-3. Use Claude normally. When an operation matches a high-risk rule, Permission
+3. Use Claude normally. When an operation matches a high-risk rule, Approval
    Lens supplies an explanation at approval time. Read it, then approve or reject
    the operation using Claude's controls.
 

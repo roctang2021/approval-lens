@@ -1,8 +1,8 @@
 # Release review — 0.29.0 candidate
 
-Reviewed 2026-09-05 against the local working tree. Suitable for a controlled
-preview. The owner has authorized publishing the source as a public GitHub
-repository; a stable release still needs the live acceptance checks below.
+Reviewed 2026-09-05. Source is public at
+[roctang2021/approval-lens](https://github.com/roctang2021/approval-lens).
+This is a preview; a stable release still needs the live acceptance checks below.
 
 ## Fixed in this review
 
@@ -33,6 +33,10 @@ Environment: macOS arm64, Claude Code 2.1.233, uv 0.11.7, Python 3.13.
 - **120 installed-hook cases passed**: six languages, Bash/WebFetch/Write/Edit,
   ordinary silent calls, and interactive plus three recognized headless entrypoints.
   The isolated plugin was uninstalled afterward; the real user profile was unchanged.
+- The README's source ZIP downloaded without authentication. The downloaded copy
+  passed the same installation, 120 hook cases, status, update and uninstall checks.
+- [Ubuntu and macOS CI passed](https://github.com/roctang2021/approval-lens/actions/runs/34007958195)
+  on the first public source commit, including both strict manifest validations.
 - The complete source, including archived notes, had no matches for the checked
   common Anthropic/GitHub token or private-key formats. This was a pattern scan.
 
@@ -40,22 +44,15 @@ These checks establish installation and hook output behavior. They do not prove
 that a native dialog was displayed or that a live model explanation was useful.
 Model requests in automated tests were mocked; no live model API calls were made.
 
-## Publication and remaining acceptance
+## Remaining acceptance
 
-1. **Publish the source and verify the download.** The owner confirmed the
-   project existed only locally. Both the local GitHub CLI and Codex's GitHub
-   connector authenticate as `roctang2021`. The initial anonymous 404 preceded
-   repository creation. The README now links to the source ZIP; verify anonymous
-   access after pushing the code to `roctang2021/approval-lens`.
-2. **Complete live product acceptance.** Follow the [live checklist](../scripts/manual-test.md)
-   on the intended Claude surfaces: verify readable reasons and approval/rejection
-   in manual and Auto modes, then exercise a real model request, locale selection
-   and fallback. Record host version, observed text and waiting time. The README's
-   disk-writing example is an illustration, not captured model output.
-3. **Run the remote Ubuntu/macOS checks on the published commit.** Include the new
-   docs, tests and workflow files. Keep 0.29.0 marked as unreleased until live
-   acceptance is complete; publishing the source does not imply that acceptance
-   has passed.
+Follow the [live checklist](../scripts/manual-test.md) on the intended Claude
+surfaces: verify readable reasons and approval/rejection in manual and Auto
+modes, then exercise a real model request, locale selection and fallback.
+Record host version, observed text and waiting time. The README's disk-writing
+example is an illustration, not captured model output.
+
+Keep 0.29.0 marked as unreleased until live acceptance is complete.
 
 ## Scope to retain in release copy
 
