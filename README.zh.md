@@ -159,7 +159,7 @@ uv run scripts/approval-lens-status.py   # 最近检查、当天计数和模型�
 ./scripts/check.sh            # 测试、静态检查、hook 冒烟测试和语言文件
 ```
 
-[配置](docs/configuration.zh.md) · [架构与接入计划](docs/architecture.md) ·
+[配置](docs/configuration.zh.md) · [开发与发布计划](docs/roadmap.zh.md) · [架构](docs/architecture.md) ·
 [更新与卸载](docs/configuration.zh.md#更新与卸载) ·
 [贡献指南](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [工程记录](NOTES.md)
 

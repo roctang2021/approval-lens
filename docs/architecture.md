@@ -5,8 +5,9 @@ approval. It serves individuals and teams that retain selective or manual
 approval, where a raw command or general permission description may not explain
 what will happen. The product is intended for multiple agents; Claude Code is
 the first implemented adapter.
-Codex, Cursor and OpenCode are planned. There is no implementation order or
-release date for those adapters yet.
+Codex, Cursor and OpenCode are planned. The [development and release plan](../ROADMAP.md)
+sets the investigation order and acceptance criteria; adapter release dates
+depend on verified host capabilities.
 
 ## Intended experience and current scope
 
@@ -62,13 +63,14 @@ host-independent API.
 
 ## Adding Codex, Cursor or OpenCode
 
-1. Define a shared action input for shell commands, URLs, file writes and edits.
-   Normalize each host's names and fields at its adapter boundary.
-2. Supply optional user context through the adapter, retaining separate consent
-   for sending it to a model. Keep transcript parsing out of shared analysis.
-3. Verify the host's extension points: when interception runs, whether a reason
+1. Verify the host's extension points: when interception runs, whether a reason
    can appear beside approval, and how allowlists and headless runs behave.
-   Record host version, surface, input and observed output.
+   Record host version, surface, input and observed output before implementing
+   the adapter.
+2. Define a shared action input for shell commands, URLs, file writes and edits.
+   Normalize each host's names and fields at its adapter boundary.
+3. Supply optional user context through the adapter, retaining separate consent
+   for sending it to a model. Keep transcript parsing out of shared analysis.
 4. Implement and test that host's response mapping. Publish support only for
    tool types and surfaces that have been exercised end to end.
 

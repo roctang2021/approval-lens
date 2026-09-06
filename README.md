@@ -186,7 +186,7 @@ uv run scripts/approval-lens-status.py   # Last check, daily counts and model-no
 ./scripts/check.sh            # Tests, lint, hook smoke test and locales
 ```
 
-[Configuration](docs/configuration.md) · [Architecture and planned integrations](docs/architecture.md) ·
+[Configuration](docs/configuration.md) · [Development and release plan](ROADMAP.md) · [Architecture](docs/architecture.md) ·
 [Updates and removal](docs/configuration.md#updates-and-removal) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Engineering records](NOTES.md)
 
